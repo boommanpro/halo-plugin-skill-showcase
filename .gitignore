@@ -1,0 +1,9 @@
+node_modules/
+.gradle/
+build/
+.idea/
+*.iml
+.DS_Store
+ui/node_modules/
+ui/dist/
+workplace/

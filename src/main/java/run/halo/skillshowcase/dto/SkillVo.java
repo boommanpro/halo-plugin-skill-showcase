@@ -1,0 +1,36 @@
+package run.halo.skillshowcase.dto;
+
+import java.time.Instant;
+import java.util.List;
+
+public record SkillVo(
+        String name,
+        Long version,
+        String displayName,
+        String category,
+        String categoryName,
+        String categoryIcon,
+        String categoryColor,
+        String coverImage,
+        String summary,
+        String content,
+        List<String> tags,
+        String sourceType,
+        String previewUrl,
+        String externalUrl,
+        String entryFile,
+        Integer sortOrder,
+        Boolean published,
+        Instant createdAt,
+        Instant updatedAt,
+        List<SkillFileVo> files,
+        String skillVersion,
+        String author,
+        String authorAvatar,
+        String authorUrl,
+        Long downloads,
+        Double rating,
+        Long ratingCount,
+        Long favorites,
+        String installCommand
+) {}

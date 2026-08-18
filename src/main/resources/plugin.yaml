@@ -1,0 +1,22 @@
+---
+apiVersion: "plugin.halo.run/v1alpha1"
+kind: "Plugin"
+metadata:
+  name: "SkillShowcase"
+  annotations:
+    store.halo.run/app-id: "app-skill-showcase"
+spec:
+  enabled: true
+  requires: ">=2.20.0"
+  author:
+    name: "boommanpro"
+    website: "https://github.com/boommanpro"
+  logo: "logo.png"
+  homepage: "https://github.com/boommanpro/halo-plugin-skill-showcase"
+  displayName: "Skill 展示"
+  description: "在 Halo 博客中管理和展示技能作品集，支持 Markdown、ZIP 演示站和外链三种形态"
+  license:
+  - name: "MIT"
+    url: "https://opensource.org/licenses/MIT"
+  version: "0.1.0"
+...

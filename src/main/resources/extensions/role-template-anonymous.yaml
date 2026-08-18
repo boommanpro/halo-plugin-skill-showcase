@@ -1,0 +1,16 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: skill-showcase-anonymous
+  labels:
+    halo.run/role-template: "true"
+    halo.run/hidden: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+    rbac.authorization.halo.run/display-name: "Skill 展示公开访问"
+  annotations:
+    rbac.authorization.halo.run/module: "Skill 展示"
+    rbac.authorization.halo.run/ui-permissions: |
+      []
+rules:
+  - nonResourceURLs: ["/showcase-api", "/showcase-api/*", "/showcase-api/**", "/showcase", "/showcase/*", "/showcase/**", "/skill", "/skill/*", "/skill/**"]
+    verbs: ["get"]

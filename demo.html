@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skill Showcase Plugin - 预览</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    /* ===== Admin Layout ===== */
+    .admin-container { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 220px;
+      background: #1f2937;
+      color: #d1d5db;
+      padding: 20px 0;
+      flex-shrink: 0;
+    }
+    .sidebar-logo {
+      padding: 0 20px 20px;
+      border-bottom: 1px solid #374151;
+      font-weight: 600;
+      font-size: 16px;
+      color: white;
+    }
+    .sidebar-item {
+      padding: 10px 20px;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sidebar-item:hover { background: #374151; }
+    .sidebar-item.active { background: #3b82f6; color: white; }
+    .sidebar-section {
+      padding: 16px 20px 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #6b7280;
+      letter-spacing: 0.5px;
+    }
+
+    .admin-main { flex: 1; padding: 24px; overflow-x: auto; }
+
+    /* ===== Top Bar ===== */
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .topbar h1 { font-size: 24px; font-weight: 600; }
+    .topbar .user {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #6b7280;
+      font-size: 14px;
+    }
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #3b82f6;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    /* ===== Toolbar ===== */
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .toolbar h2 { font-size: 20px; font-weight: 600; }
+    .toolbar-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .filter-select, .search-input {
+      padding: 6px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 14px;
+      background: white;
+    }
+    .search-input { width: 200px; }
+
+    /* ===== Buttons ===== */
+    .btn {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+    .btn-secondary:hover { background: #e5e7eb; }
+    .btn-link {
+      background: none;
+      border: none;
+      color: #3b82f6;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 0;
+    }
+    .btn-link:hover { text-decoration: underline; }
+    .btn-link.danger { color: #ef4444; }
+
+    /* ===== Table ===== */
+    .table-container {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    .skill-table { width: 100%; border-collapse: collapse; }
+    .skill-table th {
+      text-align: left;
+      padding: 12px;
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      font-weight: 600;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .skill-table td {
+      padding: 12px;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 14px;
+    }
+    .skill-table tr:hover { background: #f9fafb; }
+
+    .cover-thumb {
+      width: 48px;
+      height: 48px;
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f3f4f6;
+      font-size: 20px;
+      font-weight: 600;
+      color: #6b7280;
+    }
+    .skill-name { font-weight: 500; color: #111827; }
+    .skill-summary {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 2px;
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .category-tag {
+      padding: 2px 8px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .source-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: white;
+    }
+    .tags-cell { display: flex; gap: 4px; flex-wrap: wrap; }
+    .tag {
+      padding: 2px 6px;
+      background: #f3f4f6;
+      color: #374151;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+    .tag.more { background: transparent; color: #6b7280; }
+    .actions { display: flex; gap: 8px; }
+
+    /* Switch */
+    .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #d1d5db; transition: 0.3s; border-radius: 22px;
+    }
+    .slider:before {
+      position: absolute; content: ""; height: 16px; width: 16px;
+      left: 3px; bottom: 3px; background-color: white; transition: 0.3s; border-radius: 50%;
+    }
+    input:checked + .slider { background-color: #3b82f6; }
+    input:checked + .slider:before { transform: translateX(18px); }
+
+    /* ===== Frontend Showcase ===== */
+    .showcase-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px 24px;
+    }
+    .showcase-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .showcase-header h1 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .showcase-header p { color: #6b7280; font-size: 16px; }
+
+    .category-filters {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+    }
+    .cat-filter {
+      padding: 6px 16px;
+      border: 1px solid #d1d5db;
+      border-radius: 20px;
+      background: white;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .cat-filter:hover { border-color: #3b82f6; }
+    .cat-filter.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+
+    .skills-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .skill-card {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      transition: all 0.3s;
+      cursor: pointer;
+      position: relative;
+    }
+    .skill-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 24px rgba(0,0,0,0.12);
+    }
+    .skill-card.cover {
+      height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+    }
+    .skill-card.cover.gradient-1 { background: linear-gradient(135deg, #667eea, #764ba2); }
+    .skill-card.cover.gradient-2 { background: linear-gradient(135deg, #f093fb, #f5576c); }
+    .skill-card.cover.gradient-3 { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+    .skill-card.cover.gradient-4 { background: linear-gradient(135deg, #43e97b, #38f9d7); }
+    .skill-card.cover.gradient-5 { background: linear-gradient(135deg, #fa709a, #fee140); }
+    .skill-card.cover.gradient-6 { background: linear-gradient(135deg, #30cfd0, #330867); }
+
+    .skill-card-body { padding: 20px; }
+    .skill-card-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #111827;
+    }
+    .skill-card-summary {
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 12px;
+      line-height: 1.5;
+      min-height: 42px;
+    }
+    .skill-card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .skill-card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+    .skill-card-tag {
+      padding: 2px 8px;
+      background: #f3f4f6;
+      color: #6b7280;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .skill-card-type {
+      font-size: 11px;
+      color: #6b7280;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .type-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+    .type-dot.markdown { background: #22c55e; }
+    .type-dot.zip { background: #3b82f6; }
+    .type-dot.external { background: #f59e0b; }
+
+    /* ===== Skill Detail (Modal) ===== */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: white;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 720px;
+      max-height: 90vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 24px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .modal-header h3 { font-size: 18px; font-weight: 600; }
+    .modal-close {
+      background: none; border: none; font-size: 24px; cursor: pointer; color: #6b7280;
+    }
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    /* Code block */
+    .code-block {
+      background: #1e293b;
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 16px 0;
+    }
+    .code-block-header {
+      background: #334155;
+      padding: 8px 16px;
+      font-size: 12px;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .code-block pre {
+      padding: 16px;
+      overflow-x: auto;
+      font-family: "Menlo", "Monaco", "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #e2e8f0;
+    }
+    .code-block .kw { color: #c084fc; }
+    .code-block .str { color: #86efac; }
+    .code-block .num { color: #fbbf24; }
+    .code-block .com { color: #64748b; }
+    .code-block .fn { color: #60a5fa; }
+    .code-block .cls { color: #f87171; }
+
+    .markdown-body h1 { font-size: 24px; margin-bottom: 16px; }
+    .markdown-body h2 { font-size: 20px; margin: 20px 0 12px; }
+    .markdown-body p { line-height: 1.7; margin-bottom: 12px; color: #374151; }
+    .markdown-body ul { margin: 12px 0; padding-left: 24px; }
+    .markdown-body li { margin-bottom: 6px; }
+
+    /* ===== Tab Navigation ===== */
+    .tab-nav {
+      display: flex;
+      gap: 0;
+      border-bottom: 2px solid #e5e7eb;
+      margin-bottom: 24px;
+    }
+    .tab-item {
+      padding: 12px 24px;
+      cursor: pointer;
+      font-size: 15px;
+      color: #6b7280;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+    }
+    .tab-item:hover { color: #3b82f6; }
+    .tab-item.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+
+    /* ===== View toggle ===== */
+    .view-toggle {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #1f2937;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 24px;
+      cursor: pointer;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      z-index: 999;
+    }
+    .view-toggle:hover { background: #374151; }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #9ca3af;
+    }
+
+    /* ===== Quick Actions Bar ===== */
+    .quick-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <!-- View Toggle -->
+  <button class="view-toggle" onclick="toggleView()">
+    <span id="toggleLabel">切换到前台展示</span>
+  </button>
+
+  <!-- ============ ADMIN VIEW ============ -->
+  <div id="adminView" class="admin-container">
+    <div class="sidebar">
+      <div class="sidebar-logo">🎨 Halo CMS</div>
+      <div class="sidebar-section">插件</div>
+      <div class="sidebar-item active">📊 Skill 管理</div>
+      <div class="sidebar-item">🏷️ 分类管理</div>
+      <div class="sidebar-item">📦 ZIP 上传</div>
+      <div class="sidebar-section">系统</div>
+      <div class="sidebar-item">⚙️ 设置</div>
+      <div class="sidebar-item">🔌 插件</div>
+    </div>
+
+    <div class="admin-main">
+      <div class="topbar">
+        <h1>Skill 展示 - 管理后台</h1>
+        <div class="user">
+          <div>管理员</div>
+          <div class="avatar">A</div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <h2>Skill 管理</h2>
+        <div class="toolbar-right">
+          <select class="filter-select">
+            <option>全部分类</option>
+            <option>前端开发</option>
+            <option>后端开发</option>
+            <option>AI 应用</option>
+            <option>工具类</option>
+          </select>
+          <input class="search-input" type="text" placeholder="搜索 Skill..." />
+          <button class="btn btn-secondary">分类管理</button>
+          <button class="btn btn-secondary">ZIP 上传</button>
+          <button class="btn btn-primary">+ 新增 Skill</button>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table class="skill-table">
+          <thead>
+            <tr>
+              <th style="width:80px">封面</th>
+              <th>名称</th>
+              <th>分类</th>
+              <th>类型</th>
+              <th>标签</th>
+              <th style="width:80px">排序</th>
+              <th style="width:80px">发布</th>
+              <th style="width:180px">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><div class="cover-thumb" style="background:linear-gradient(135deg,#667eea,#764ba2);color:white">☕</div></td>
+              <td>
+                <div class="skill-name">Java 后端开发</div>
+                <div class="skill-summary">Spring Boot / MyBatis / JPA</div>
+              </td>
+              <td><span class="category-tag">后端开发</span></td>
+              <td><span class="source-badge" style="background:#22c55e">Markdown</span></td>
+              <td>
+                <div class="tags-cell">
+                  <span class="tag">Java</span>
+                  <span class="tag">Spring</span>
+                  <span class="tag">MySQL</span>
+                </div>
+              </td>
+              <td>1</td>
+              <td>
+                <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              </td>
+              <td>
+                <div class="actions">
+                  <button class="btn-link" onclick="showSkillDetail('java')">编辑</button>
+                  <button class="btn-link">预览</button>
+                  <button class="btn-link danger">删除</button>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><div class="cover-thumb" style="background:linear-gradient(135deg,#f093fb,#f5576c);color:white">⚛️</div></td>
+              <td>
+                <div class="skill-name">React 前端</div>
+                <div class="skill-summary">React / TypeScript / Tailwind</div>
+              </td>
+              <td><span class="category-tag">前端开发</span></td>
+              <td><span class="source-badge" style="background:#22c55e">Markdown</span></td>
+              <td>
+                <div class="tags-cell">
+                  <span class="tag">React</span>
+                  <span class="tag">TypeScript</span>
+                </div>
+              </td>
+              <td>2</td>
+              <td>
+                <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              </td>
+              <td>
+                <div class="actions">
+                  <button class="btn-link">编辑</button>
+                  <button class="btn-link">预览</button>
+                  <button class="btn-link danger">删除</button>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><div class="cover-thumb" style="background:linear-gradient(135deg,#4facfe,#00f2fe);color:white">🤖</div></td>
+              <td>
+                <div class="skill-name">AI Chat Demo</div>
+                <div class="skill-summary">实时对话演示站</div>
+              </td>
+              <td><span class="category-tag">AI 应用</span></td>
+              <td><span class="source-badge" style="background:#3b82f6">ZIP</span></td>
+              <td>
+                <div class="tags-cell">
+                  <span class="tag">AI</span>
+                  <span class="tag">Demo</span>
+                </div>
+              </td>
+              <td>3</td>
+              <td>
+                <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              </td>
+              <td>
+                <div class="actions">
+                  <button class="btn-link">编辑</button>
+                  <button class="btn-link" onclick="showIframePreview()">预览</button>
+                  <button class="btn-link danger">删除</button>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><div class="cover-thumb" style="background:linear-gradient(135deg,#43e97b,#38f9d7);color:white">🔗</div></td>
+              <td>
+                <div class="skill-name">个人博客</div>
+                <div class="skill-summary">访问我的博客站点</div>
+              </td>
+              <td><span class="category-tag">外链</span></td>
+              <td><span class="source-badge" style="background:#f59e0b">外链</span></td>
+              <td>
+                <div class="tags-cell">
+                  <span class="tag">Blog</span>
+                </div>
+              </td>
+              <td>4</td>
+              <td>
+                <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              </td>
+              <td>
+                <div class="actions">
+                  <button class="btn-link">编辑</button>
+                  <button class="btn-link" onclick="window.open('https://halo.run','_blank')">访问</button>
+                  <button class="btn-link danger">删除</button>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><div class="cover-thumb" style="background:linear-gradient(135deg,#fa709a,#fee140);color:white">🛠️</div></td>
+              <td>
+                <div class="skill-name">CLI 工具箱</div>
+                <div class="skill-summary">命令行效率工具集</div>
+              </td>
+              <td><span class="category-tag">工具类</span></td>
+              <td><span class="source-badge" style="background:#22c55e">Markdown</span></td>
+              <td>
+                <div class="tags-cell">
+                  <span class="tag">CLI</span>
+                  <span class="tag">Shell</span>
+                  <span class="tag">效率</span>
+                </div>
+              </td>
+              <td>5</td>
+              <td>
+                <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              </td>
+              <td>
+                <div class="actions">
+                  <button class="btn-link">编辑</button>
+                  <button class="btn-link">预览</button>
+                  <button class="btn-link danger">删除</button>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><div class="cover-thumb" style="background:linear-gradient(135deg,#30cfd0,#330867);color:white">🎨</div></td>
+              <td>
+                <div class="skill-name">UI 设计系统</div>
+                <div class="skill-summary">组件库与设计规范</div>
+              </td>
+              <td><span class="category-tag">前端开发</span></td>
+              <td><span class="source-badge" style="background:#3b82f6">ZIP</span></td>
+              <td>
+                <div class="tags-cell">
+                  <span class="tag">UI</span>
+                  <span class="tag">Design</span>
+                </div>
+              </td>
+              <td>6</td>
+              <td>
+                <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+              </td>
+              <td>
+                <div class="actions">
+                  <button class="btn-link">编辑</button>
+                  <button class="btn-link">预览</button>
+                  <button class="btn-link danger">删除</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FRONTEND SHOWCASE VIEW ============ -->
+  <div id="frontendView" style="display:none">
+    <div class="showcase-container">
+      <div class="showcase-header">
+        <h1>我的技能展示</h1>
+        <p>全栈开发者 · 热爱技术 · 持续学习</p>
+      </div>
+
+      <div class="tab-nav">
+        <div class="tab-item">首页</div>
+        <div class="tab-item active">Skill 展示</div>
+        <div class="tab-item">文章</div>
+        <div class="tab-item">关于</div>
+      </div>
+
+      <div class="category-filters">
+        <div class="cat-filter active">全部</div>
+        <div class="cat-filter">💻 前端开发</div>
+        <div class="cat-filter">⚙️ 后端开发</div>
+        <div class="cat-filter">🤖 AI 应用</div>
+        <div class="cat-filter">🛠️ 工具类</div>
+      </div>
+
+      <div class="skills-grid" id="skillsGrid">
+        <!-- Cards will be inserted here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SKILL DETAIL MODAL ============ -->
+  <div class="modal-overlay" id="skillModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Skill 详情</h3>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Modal content -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ IFRAME PREVIEW MODAL ============ -->
+  <div class="modal-overlay" id="iframeModal">
+    <div class="modal" style="max-width:900px">
+      <div class="modal-header">
+        <h3>AI Chat Demo - 预览</h3>
+        <button class="modal-close" onclick="closeIframeModal()">×</button>
+      </div>
+      <div class="modal-body" style="padding:0">
+        <div style="background:#f3f4f6;padding:20px;text-align:center;color:#6b7280;min-height:400px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+          <div style="font-size:64px;margin-bottom:16px">🤖</div>
+          <h3 style="margin-bottom:8px;color:#111827">AI Chat Demo</h3>
+          <p style="margin-bottom:16px">这是一个 ZIP 上传的演示站，通过 iframe 嵌入显示</p>
+          <div style="background:white;padding:16px 24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);max-width:500px;width:100%;text-align:left">
+            <div style="font-size:14px;color:#374151;margin-bottom:8px">🗨️ 用户: 你好！</div>
+            <div style="font-size:14px;color:#3b82f6;margin-bottom:12px">🤖 AI: 你好！我是 AI 助手，有什么可以帮助你的吗？</div>
+            <div style="font-size:14px;color:#374151;margin-bottom:8px">🗨️ 用户: 介绍一下 Spring Boot</div>
+            <div style="font-size:14px;color:#3b82f6">🤖 AI: Spring Boot 是一个开源框架...<span style="background:#dbeafe">▌</span></div>
+          </div>
+          <div style="margin-top:16px;font-size:12px;color:#9ca3af">实际部署时，此处将通过 iframe 加载 ZIP 解压后的 HTML 文件</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const skills = [
+      {
+        name: "Java 后端开发",
+        category: "后端开发",
+        categoryColor: "#3b82f6",
+        summary: "Spring Boot / MyBatis / JPA 全栈后端能力",
+        type: "markdown",
+        typeLabel: "Markdown",
+        gradient: "gradient-1",
+        icon: "☕",
+        tags: ["Java", "Spring", "MySQL"],
+        content: `# Java 后端开发
+
+熟练掌握 Spring Boot 生态，具备从 0 到 1 构建后端服务的能力。
+
+## 技术栈
+
+- **框架**: Spring Boot 2.7+ / Spring Cloud
+- **数据库**: MySQL / PostgreSQL / Redis
+- **ORM**: MyBatis Plus / Spring Data JPA
+
+## 代码示例
+
+\`\`\`java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+
+    private final UserService userService;
+
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+
+    @GetMapping("/{id}")
+    public Mono<User> getUser(@PathVariable Long id) {
+        return userService.findById(id);
+    }
+
+    @PostMapping
+    public Mono<User> createUser(@RequestBody UserDTO dto) {
+        return userService.create(dto);
+    }
+}
+\`\`\``
+      },
+      {
+        name: "React 前端",
+        category: "前端开发",
+        categoryColor: "#3b82f6",
+        summary: "现代化 React 开发，TypeScript + Tailwind CSS",
+        type: "markdown",
+        typeLabel: "Markdown",
+        gradient: "gradient-2",
+        icon: "⚛️",
+        tags: ["React", "TypeScript"],
+        content: `# React 前端开发
+
+深入理解 React Hooks、状态管理和性能优化。
+
+## 核心技能
+
+- **Hooks**: useState / useEffect / useMemo / useCallback
+- **状态管理**: Zustand / Redux Toolkit
+- **样式**: Tailwind CSS / CSS Modules
+
+## 代码示例
+
+\`\`\`tsx
+import { useState, useEffect } from 'react';
+
+interface Props {
+  title: string;
+}
+
+export function Dashboard({ title }: Props) {
+  const [data, setData] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchData().then(items => {
+      setData(items);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) return <Spinner />;
+  return <Grid items={data} title={title} />;
+}
+\`\`\``
+      },
+      {
+        name: "AI Chat Demo",
+        category: "AI 应用",
+        categoryColor: "#8b5cf6",
+        summary: "实时对话演示站，支持多轮上下文",
+        type: "zip",
+        typeLabel: "ZIP 演示",
+        gradient: "gradient-3",
+        icon: "🤖",
+        tags: ["AI", "Demo"]
+      },
+      {
+        name: "个人博客",
+        category: "外链",
+        categoryColor: "#f59e0b",
+        summary: "访问我的博客站点了解更多",
+        type: "external",
+        typeLabel: "外链",
+        gradient: "gradient-4",
+        icon: "🔗",
+        tags: ["Blog"],
+        url: "https://halo.run"
+      },
+      {
+        name: "CLI 工具箱",
+        category: "工具类",
+        categoryColor: "#10b981",
+        summary: "命令行效率工具集，Shell 脚本自动化",
+        type: "markdown",
+        typeLabel: "Markdown",
+        gradient: "gradient-5",
+        icon: "🛠️",
+        tags: ["CLI", "Shell", "效率"],
+        content: '# CLI 工具箱\n\n' +
+      '常用的命令行工具和 Shell 脚本合集。\n\n' +
+      '## 实用命令\n\n' +
+      '```bash\n' +
+      '# 快速创建项目\n' +
+      'function mkproject() {\n' +
+      '    local name=$1\n' +
+      '    mkdir -p $name/{src,public,tests}\n' +
+      '    touch $name/src/index.js\n' +
+      '    echo "Project $name created!"\n' +
+      '}\n\n' +
+      '# Git 快速提交\n' +
+      'function gac() {\n' +
+      '    git add .\n' +
+      '    git commit -m "${1:-update}"\n' +
+      '}\n\n' +
+      '# 端口占用查询\n' +
+      'function port() {\n' +
+      '    lsof -i :$1\n' +
+      '}\n' +
+      '```'
+      },
+      {
+        name: "UI 设计系统",
+        category: "前端开发",
+        categoryColor: "#3b82f6",
+        summary: "完整的组件库与设计规范",
+        type: "zip",
+        typeLabel: "ZIP 演示",
+        gradient: "gradient-6",
+        icon: "🎨",
+        tags: ["UI", "Design"]
+      }
+    ];
+
+    function getOnclick(s, i) {
+      if (s.type === 'markdown') return 'showSkillDetail(' + i + ')';
+      if (s.type === 'zip') return 'showIframePreview()';
+      return "openLink('" + s.url + "')";
+    }
+
+    function renderSkills() {
+      const grid = document.getElementById('skillsGrid');
+      grid.innerHTML = skills.map((s, i) => {
+        const tagsHtml = s.tags.slice(0, 2).map(t => '<span class="skill-card-tag">' + t + '</span>').join('');
+        return ''
+          + '<div class="skill-card" onclick="' + getOnclick(s, i) + '">'
+          + '<div class="skill-card-cover ' + s.gradient + '">'
+          + '<span style="font-size:48px">' + s.icon + '</span>'
+          + '</div>'
+          + '<div class="skill-card-body">'
+          + '<div class="skill-card-title">' + s.name + '</div>'
+          + '<div class="skill-card-summary">' + s.summary + '</div>'
+          + '<div class="skill-card-meta">'
+          + '<div class="skill-card-tags">' + tagsHtml + '</div>'
+          + '<div class="skill-card-type">'
+          + '<span class="type-dot ' + s.type + '"></span>'
+          + s.typeLabel
+          + '</div>'
+          + '</div>'
+          + '</div>'
+          + '</div>';
+      }).join('');
+    }
+
+    function showSkillDetail(indexOrName) {
+      let skill;
+      if (typeof indexOrName === 'number') {
+        skill = skills[indexOrName];
+      } else {
+        skill = skills.find(s => s.name === 'Java 后端开发');
+      }
+      if (!skill || !skill.content) return;
+
+      document.getElementById('modalTitle').textContent = skill.name;
+      const body = document.getElementById('modalBody');
+      body.innerHTML = renderMarkdown(skill.content);
+      document.getElementById('skillModal').classList.add('active');
+    }
+
+    function renderMarkdown(md) {
+      // Simple markdown rendering for demo
+      let html = md
+        .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+        .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`([^`]+)`/g, '<code style="background:#f3f4f6;padding:2px 6px;border-radius:3px;font-size:13px">$1</code>')
+        .replace(/^- (.*$)/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+        .split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('\n');
+
+      // Code blocks
+      html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+        const highlighted = highlightCode(code, lang);
+        return `<div class="code-block">
+          <div class="code-block-header"><span>${lang || 'text'}</span><span>📋</span></div>
+          <pre><code>${highlighted}</code></pre>
+        </div>`;
+      });
+
+      return `<div class="markdown-body">${html}</div>`;
+    }
+
+    function highlightCode(code, lang) {
+      // Simple syntax highlighting for demo
+      let highlighted = code
+        .replace(/\/\/(.*$)/gm, '<span class="com">//$1</span>')
+        .replace(/\b(public|private|protected|class|interface|import|package|return|new|if|else|for|while|function|const|let|var|export|from|default)\b/g, '<span class="kw">$1</span>')
+        .replace(/\b(String|Integer|Long|void|boolean|int|String|Mono|Flux|List|Map)\b/g, '<span class="cls">$1</span>')
+        .replace(/"([^"]*)"|'([^']*)'/g, '<span class="str">"$1$2"</span>')
+        .replace(/\b(\d+)\b/g, '<span class="num">$1</span>')
+        .replace(/\b([a-zA-Z_]\w*)\s*\(/g, '<span class="fn">$1</span>');
+      return highlighted;
+    }
+
+    function closeModal() {
+      document.getElementById('skillModal').classList.remove('active');
+    }
+
+    function showIframePreview() {
+      document.getElementById('iframeModal').classList.add('active');
+    }
+
+    function closeIframeModal() {
+      document.getElementById('iframeModal').classList.remove('active');
+    }
+
+    function openLink(url) {
+      window.open(url, '_blank');
+    }
+
+    function toggleView() {
+      const admin = document.getElementById('adminView');
+      const frontend = document.getElementById('frontendView');
+      const label = document.getElementById('toggleLabel');
+      if (admin.style.display === 'none') {
+        admin.style.display = 'flex';
+        frontend.style.display = 'none';
+        label.textContent = '切换到前台展示';
+      } else {
+        admin.style.display = 'none';
+        frontend.style.display = 'block';
+        label.textContent = '切换到管理后台';
+      }
+    }
+
+    // Category filter interaction
+    document.querySelectorAll('.cat-filter').forEach(el => {
+      el.addEventListener('click', () => {
+        document.querySelectorAll('.cat-filter').forEach(c => c.classList.remove('active'));
+        el.classList.add('active');
+      });
+    });
+
+    // Tab interaction
+    document.querySelectorAll('.tab-item').forEach(el => {
+      el.addEventListener('click', () => {
+        document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+        el.classList.add('active');
+      });
+    });
+
+    // Init
+    renderSkills();
+  </script>
+</body>
+</html>
