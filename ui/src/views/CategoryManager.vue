@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from "vue";
 import axios from "axios";
+import { VButton, Toast } from "@halo-dev/components";
 
 const props = defineProps<{
   categories: any[];
@@ -94,7 +95,7 @@ async function save() {
     await fetchCategories();
     emit("changed");
   } catch (e: any) {
-    alert("保存失败: " + (e.response?.data?.message || e.message));
+    Toast.error("保存失败: " + (e.response?.data?.message || e.message));
   } finally {
     saving.value = false;
   }
@@ -107,7 +108,7 @@ async function deleteCat(name: string) {
     await fetchCategories();
     emit("changed");
   } catch (e: any) {
-    alert("删除失败");
+    Toast.error("删除失败");
   }
 }
 
@@ -148,15 +149,15 @@ onMounted(fetchCategories);
             </div>
           </div>
           <div class="form-actions">
-            <button class="btn btn-primary" :disabled="saving" @click="save">
+            <VButton :disabled="saving" @click="save">
               {{ saving ? "保存中..." : "保存" }}
-            </button>
-            <button class="btn btn-secondary" @click="cancelForm">取消</button>
+            </VButton>
+            <VButton @click="cancelForm">取消</VButton>
           </div>
         </div>
         <div v-else class="toolbar">
           <span class="hint">共 {{ localCats.length }} 个分类</span>
-          <button class="btn btn-primary" @click="openCreate">+ 新增分类</button>
+          <VButton type="primary" @click="openCreate">+ 新增分类</VButton>
         </div>
 
         <div class="category-list" v-if="localCats.length > 0 && !showForm">
@@ -172,8 +173,8 @@ onMounted(fetchCategories);
               <div class="cat-desc" v-if="cat.description">{{ cat.description }}</div>
             </div>
             <div class="cat-actions">
-              <button class="btn-link" @click="openEdit(cat)">编辑</button>
-              <button class="btn-link danger" @click="deleteCat(cat.name)">删除</button>
+              <VButton size="sm" @click="openEdit(cat)">编辑</VButton>
+              <VButton size="sm" type="danger" @click="deleteCat(cat.name)">删除</VButton>
             </div>
           </div>
         </div>
@@ -199,7 +200,7 @@ onMounted(fetchCategories);
   z-index: 1000;
 }
 .dialog {
-  background: white;
+  background: var(--color-bg, #fff);
   border-radius: 12px;
   width: 520px;
   max-height: 90vh;
@@ -211,25 +212,26 @@ onMounted(fetchCategories);
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-divider, #e5e7eb);
 }
 .dialog-header h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+  color: var(--color-text, #111827);
 }
 .close-btn {
   background: none;
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-text-secondary, #6b7280);
 }
 .dialog-body {
   padding: 20px 24px;
 }
 .form-area {
-  background: #f9fafb;
+  background: var(--color-gray-100, #f9fafb);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
@@ -247,15 +249,17 @@ onMounted(fetchCategories);
   margin-bottom: 4px;
   font-size: 13px;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text, #374151);
 }
 .form-group input {
   width: 100%;
   padding: 6px 10px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border, #d1d5db);
   border-radius: 6px;
   font-size: 14px;
   box-sizing: border-box;
+  background: var(--color-bg, #fff);
+  color: var(--color-text, #111827);
 }
 .icon-input {
   width: 80px;
@@ -265,7 +269,7 @@ onMounted(fetchCategories);
   width: 48px;
   height: 32px;
   padding: 2px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border, #d1d5db);
   border-radius: 6px;
   cursor: pointer;
 }
@@ -281,7 +285,7 @@ onMounted(fetchCategories);
   align-items: center;
 }
 .toolbar .hint {
-  color: #6b7280;
+  color: var(--color-text-secondary, #6b7280);
   font-size: 14px;
 }
 .category-list {
@@ -294,10 +298,10 @@ onMounted(fetchCategories);
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-divider, #e5e7eb);
   border-left: 4px solid;
   border-radius: 8px;
-  background: #fafafa;
+  background: var(--color-gray-100, #fafafa);
 }
 .cat-icon {
   font-size: 24px;
@@ -307,60 +311,20 @@ onMounted(fetchCategories);
 }
 .cat-name {
   font-weight: 500;
-  color: #111827;
+  color: var(--color-text, #111827);
 }
 .cat-desc {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-text-secondary, #6b7280);
   margin-top: 2px;
 }
 .cat-actions {
   display: flex;
   gap: 8px;
 }
-.btn-link {
-  background: none;
-  border: none;
-  color: #3b82f6;
-  cursor: pointer;
-  font-size: 13px;
-  padding: 0;
-}
-.btn-link:hover {
-  text-decoration: underline;
-}
-.btn-link.danger {
-  color: #ef4444;
-}
 .empty {
   text-align: center;
   padding: 40px 20px;
-  color: #9ca3af;
-}
-.btn {
-  padding: 6px 14px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-.btn-primary {
-  background: #3b82f6;
-  color: white;
-}
-.btn-primary:hover {
-  background: #2563eb;
-}
-.btn-primary:disabled {
-  background: #93c5fd;
-  cursor: not-allowed;
-}
-.btn-secondary {
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
-}
-.btn-secondary:hover {
-  background: #e5e7eb;
+  color: var(--color-text-secondary, #9ca3af);
 }
 </style>

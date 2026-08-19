@@ -245,6 +245,96 @@ public class SkillService {
                 }));
     }
 
+    /**
+     * Replace the files of an existing ZIP skill. The slug / metadata.name stays the same.
+     * The new zip is extracted to a temp dir first and swapped in only after validation
+     * succeeds, so a failed update does not corrupt the current content.
+     */
+    public Mono<SkillVo> updateZip(String name, FilePart file, String displayName,
+                                    String category, String summary, List<String> tags) {
+        return client.fetch(Skill.class, name)
+            .switchIfEmpty(Mono.error(new ServerWebInputException("Skill not found: " + name)))
+            .flatMap(existing -> {
+                if (!"zip".equals(existing.getSpec().getSourceType())) {
+                    return Mono.error(new ServerWebInputException(
+                        "not a zip skill: " + name));
+                }
+                return DataBufferUtils.join(file.content()).flatMap(dataBuffer -> {
+                    byte[] bytes;
+                    try (var is = dataBuffer.asInputStream()) {
+                        bytes = is.readAllBytes();
+                    } catch (IOException e) {
+                        DataBufferUtils.release(dataBuffer);
+                        return Mono.error(e);
+                    } finally {
+                        DataBufferUtils.release(dataBuffer);
+                    }
+                    if (bytes.length > MAX_ZIP_BYTES) {
+                        return Mono.error(new ServerWebInputException(
+                            "zip cannot exceed 50MB"));
+                    }
+                    return Mono.fromCallable(() -> replaceZip(existing, bytes,
+                            displayName, category, summary, tags))
+                        .flatMap(s -> client.update(s))
+                        .flatMap(s -> getCategoryMap().map(catMap -> toVo(s, catMap)))
+                        .onErrorResume(e -> Mono.error(new RuntimeException(
+                            "update zip skill failed: " + e.getMessage(), e)));
+                });
+            });
+    }
+
+    private Skill replaceZip(Skill existing, byte[] bytes, String displayName,
+                             String category, String summary, List<String> tags)
+            throws IOException {
+        String slug = existing.getMetadata().getName();
+        Path skillDir = storage.skillDir(slug);
+        Path tmpDir = storage.skillDir(slug + ".tmp-" + Long.toHexString(System.nanoTime()));
+        try {
+            Files.createDirectories(tmpDir);
+            ZipExtractorService.Result result;
+            try (var bais = new java.io.ByteArrayInputStream(bytes)) {
+                result = zipExtractor.extract(bais, tmpDir);
+            } catch (Exception e) {
+                throw new ServerWebInputException("extract failed: " + e.getMessage());
+            }
+            if (result.fileCount() == 0) {
+                throw new ServerWebInputException("empty zip");
+            }
+            zipExtractor.flattenSingleWrapperDir(tmpDir);
+            boolean isWebsite = Files.isRegularFile(tmpDir.resolve("index.html"));
+            String entryFile = isWebsite ? null : findEntryFile(tmpDir);
+            if (!isWebsite && entryFile == null) {
+                throw new ServerWebInputException(
+                    "zip must contain an index.html (website package) or a markdown entry "
+                        + "(SKILL.md / README.md) in its root or single top-level directory");
+            }
+            // Validation passed: swap the new content in.
+            storage.deleteQuietly(skillDir);
+            Files.move(tmpDir, skillDir);
+
+            Skill.Spec spec = existing.getSpec();
+            if (displayName != null && !displayName.isBlank()) {
+                spec.setDisplayName(displayName);
+            }
+            if (category != null && !category.isBlank()) {
+                spec.setCategory(category);
+            }
+            if (summary != null) {
+                spec.setSummary(summary);
+            }
+            if (tags != null) {
+                spec.setTags(tags);
+            }
+            spec.setZipPath(skillDir.toString());
+            spec.setEntryFile(entryFile);
+            spec.setUpdatedAt(Instant.now());
+            return existing;
+        } catch (RuntimeException e) {
+            storage.deleteQuietly(tmpDir);
+            throw e;
+        }
+    }
+
     private Skill prepareZip(byte[] bytes, String slug, String displayName,
                               String category, String summary, String coverImage,
                               List<String> tags, String originalFilename) {

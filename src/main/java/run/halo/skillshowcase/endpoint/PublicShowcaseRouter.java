@@ -31,7 +31,6 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
 
     private static final String API_PREFIX = "/showcase-api";
     private static final String PUBLIC_PREFIX = "/showcase";
-    private static final String SKILL_PREFIX = "/skill";
 
     private final SkillService skillService;
     private final SkillCategoryService categoryService;
@@ -44,22 +43,13 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
         if (path.startsWith(API_PREFIX)) {
             return routeApi(request);
         }
-        
-        // Skill center page (integrated with theme)
-        if (path.equals(SKILL_PREFIX) || path.startsWith(SKILL_PREFIX + "/")) {
-            return Mono.just(this::serveSkillCenter);
-        }
-        
+
         // Public page routes
         if (path.startsWith(PUBLIC_PREFIX)) {
             return routePage(request);
         }
-        
-        return Mono.empty();
-    }
 
-    private Mono<ServerResponse> serveSkillCenter(ServerRequest request) {
-        return loadHtmlResource("showcase/skill.html");
+        return Mono.empty();
     }
 
     private Mono<HandlerFunction<ServerResponse>> routeApi(ServerRequest request) {

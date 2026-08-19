@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
 import axios from "axios";
+import { VButton, Toast } from "@halo-dev/components";
 
 const props = defineProps<{
   skill: any;
@@ -20,7 +21,6 @@ const saving = ref(false);
 const form = ref({
   displayName: "",
   category: "",
-  coverImage: "",
   summary: "",
   content: "",
   tags: [] as string[],
@@ -37,7 +37,6 @@ watch(
     if (s) {
       form.value.displayName = s.displayName || "";
       form.value.category = s.category || "";
-      form.value.coverImage = s.coverImage || "";
       form.value.summary = s.summary || "";
       form.value.content = s.content || "";
       form.value.tags = s.tags || [];
@@ -49,7 +48,6 @@ watch(
       form.value = {
         displayName: "",
         category: props.categories[0]?.name || "",
-        coverImage: "",
         summary: "",
         content: "",
         tags: [],
@@ -60,6 +58,9 @@ watch(
         published: true,
       };
     }
+    // 标签编辑态重置
+    editingTagIndex.value = -1;
+    editingTagValue.value = "";
   },
   { immediate: true }
 );
@@ -75,6 +76,45 @@ function addTag() {
 function removeTag(tag: string) {
   const idx = form.value.tags.indexOf(tag);
   if (idx >= 0) form.value.tags.splice(idx, 1);
+  if (editingTagIndex.value === idx) editingTagIndex.value = -1;
+}
+
+// 标签内联编辑:点击标签即可修改文本
+const editingTagIndex = ref(-1);
+const editingTagValue = ref("");
+const editInputRef = ref<HTMLInputElement | null>(null);
+
+function setEditInputRef(el: any) {
+  editInputRef.value = el as HTMLInputElement | null;
+}
+
+async function startEditTag(index: number) {
+  editingTagIndex.value = index;
+  editingTagValue.value = form.value.tags[index] || "";
+  await nextTick();
+  editInputRef.value?.focus();
+  editInputRef.value?.select();
+}
+
+function commitEditTag() {
+  const idx = editingTagIndex.value;
+  if (idx < 0) return;
+  const newTag = editingTagValue.value.trim();
+  if (newTag && !form.value.tags.includes(newTag)) {
+    form.value.tags[idx] = newTag;
+  } else if (!newTag) {
+    form.value.tags.splice(idx, 1);
+  } else {
+    // 与已有标签重复:保留原值
+    form.value.tags[idx] = form.value.tags[idx];
+  }
+  editingTagIndex.value = -1;
+  editingTagValue.value = "";
+}
+
+function cancelEditTag() {
+  editingTagIndex.value = -1;
+  editingTagValue.value = "";
 }
 
 function generateSlug(text: string): string {
@@ -108,7 +148,6 @@ async function save() {
       spec: {
         displayName: form.value.displayName,
         category: form.value.category,
-        coverImage: form.value.coverImage,
         summary: form.value.summary,
         content: form.value.sourceType === "markdown" ? form.value.content : "",
         tags: form.value.tags,
@@ -124,9 +163,10 @@ async function save() {
     } else {
       await axios.post(`${apiBase}/skills`, payload);
     }
+    Toast.success("保存成功");
     emit("saved");
   } catch (e: any) {
-    alert("保存失败: " + (e.response?.data?.message || e.message));
+    Toast.error("保存失败: " + (e.response?.data?.message || e.message));
   } finally {
     saving.value = false;
   }
@@ -161,20 +201,28 @@ async function save() {
           </div>
         </div>
         <div class="form-group">
-          <label>封面图 URL</label>
-          <input v-model="form.coverImage" type="text" placeholder="https://..." />
-        </div>
-        <div class="form-group">
           <label>简短描述</label>
           <textarea v-model="form.summary" rows="2" placeholder="在卡片上显示的简短介绍"></textarea>
         </div>
         <div class="form-group">
-          <label>标签</label>
+          <label>标签（点击标签可直接编辑）</label>
           <div class="tags-input">
-            <span v-for="tag in form.tags" :key="tag" class="tag-chip">
-              {{ tag }}
-              <button @click="removeTag(tag)">×</button>
-            </span>
+            <template v-for="(tag, i) in form.tags" :key="i">
+              <input
+                v-if="editingTagIndex === i"
+                :ref="setEditInputRef"
+                v-model="editingTagValue"
+                type="text"
+                class="tag-edit-input"
+                @keyup.enter.prevent="commitEditTag"
+                @keyup.esc="cancelEditTag"
+                @blur="commitEditTag"
+              />
+              <span v-else class="tag-chip" @click="startEditTag(i)">
+                {{ tag }}
+                <button @click.stop="removeTag(tag)">×</button>
+              </span>
+            </template>
             <input
               v-model="form.tagInput"
               type="text"
@@ -220,10 +268,10 @@ async function save() {
         </div>
       </div>
       <div class="dialog-footer">
-        <button class="btn btn-secondary" @click="emit('close')">取消</button>
-        <button class="btn btn-primary" :disabled="saving" @click="save">
+        <VButton :disabled="saving" @click="emit('close')">取消</VButton>
+        <VButton type="primary" :disabled="saving" @click="save">
           {{ saving ? "保存中..." : "保存" }}
-        </button>
+        </VButton>
       </div>
     </div>
   </div>
@@ -243,7 +291,7 @@ async function save() {
   z-index: 1000;
 }
 .dialog {
-  background: white;
+  background: var(--color-bg, #fff);
   border-radius: 12px;
   width: 640px;
   max-height: 90vh;
@@ -255,19 +303,20 @@ async function save() {
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-divider, #e5e7eb);
 }
 .dialog-header h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+  color: var(--color-text, #111827);
 }
 .close-btn {
   background: none;
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-text-secondary, #6b7280);
 }
 .dialog-body {
   padding: 20px 24px;
@@ -280,7 +329,7 @@ async function save() {
   margin-bottom: 6px;
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text, #374151);
 }
 .form-group input[type="text"],
 .form-group input[type="number"],
@@ -288,11 +337,13 @@ async function save() {
 .form-group textarea {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border, #d1d5db);
   border-radius: 6px;
   font-size: 14px;
   box-sizing: border-box;
   font-family: inherit;
+  background: var(--color-bg, #fff);
+  color: var(--color-text, #111827);
 }
 .form-group textarea {
   resize: vertical;
@@ -302,6 +353,7 @@ async function save() {
   align-items: center;
   gap: 8px;
   cursor: pointer;
+  color: var(--color-text, #111827);
 }
 .form-row {
   display: flex;
@@ -315,7 +367,7 @@ async function save() {
   flex-wrap: wrap;
   gap: 6px;
   padding: 8px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border, #d1d5db);
   border-radius: 6px;
   min-height: 38px;
   align-items: center;
@@ -325,18 +377,28 @@ async function save() {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--color-gray-100, #f3f4f6);
+  color: var(--color-primary, #00b8a6);
   border-radius: 4px;
   font-size: 13px;
+  cursor: pointer;
 }
 .tag-chip button {
   background: none;
   border: none;
-  color: #1d4ed8;
+  color: var(--color-primary, #00b8a6);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
+}
+.tag-edit-input {
+  border: 1px solid var(--color-primary, #00b8a6);
+  outline: none;
+  font-size: 13px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-bg, #fff);
+  color: var(--color-text, #111827);
 }
 .tags-input input {
   border: none;
@@ -344,6 +406,8 @@ async function save() {
   font-size: 14px;
   flex: 1;
   min-width: 100px;
+  background: transparent;
+  color: var(--color-text, #111827);
 }
 .radio-group {
   display: flex;
@@ -355,9 +419,10 @@ async function save() {
   gap: 6px;
   cursor: pointer;
   font-size: 14px;
+  color: var(--color-text, #111827);
 }
 .editor-wrapper {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border, #d1d5db);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -371,38 +436,14 @@ async function save() {
   resize: vertical;
   box-sizing: border-box;
   min-height: 240px;
+  background: var(--color-bg, #fff);
+  color: var(--color-text, #111827);
 }
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
   padding: 16px 24px;
-  border-top: 1px solid #e5e7eb;
-}
-.btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-.btn-primary {
-  background: #3b82f6;
-  color: white;
-}
-.btn-primary:hover {
-  background: #2563eb;
-}
-.btn-primary:disabled {
-  background: #93c5fd;
-  cursor: not-allowed;
-}
-.btn-secondary {
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
-}
-.btn-secondary:hover {
-  background: #e5e7eb;
+  border-top: 1px solid var(--color-divider, #e5e7eb);
 }
 </style>

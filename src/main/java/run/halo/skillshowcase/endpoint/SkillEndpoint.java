@@ -31,6 +31,7 @@ public class SkillEndpoint implements RouterFunction<ServerResponse> {
         .PUT(PREFIX + "/skills/{name}", this::update)
         .DELETE(PREFIX + "/skills/{name}", this::delete)
         .POST(PREFIX + "/skills/upload", this::uploadZip)
+        .PUT(PREFIX + "/skills/{name}/upload", this::updateZip)
         .build();
 
     @Override
@@ -72,44 +73,69 @@ public class SkillEndpoint implements RouterFunction<ServerResponse> {
 
     private Mono<ServerResponse> uploadZip(ServerRequest request) {
         return request.multipartData().flatMap(parts -> {
-            FilePart filePart = null;
-            String displayName = null;
-            String slug = null;
-            String category = null;
-            String summary = null;
-            String coverImage = null;
-            List<String> tags = List.of();
+            UploadFields f = parseUploadFields(parts);
+            if (f.filePart() == null) {
+                return ServerResponse.badRequest().bodyValue("missing file part");
+            }
+            if (f.displayName() == null || f.displayName().isBlank()) {
+                return ServerResponse.badRequest().bodyValue("displayName is required");
+            }
+            return service.uploadZip(f.filePart(), f.displayName(), f.slug(),
+                    f.category(), f.summary(), f.coverImage(), f.tags())
+                .flatMap(vo -> ServerResponse.ok().bodyValue(vo));
+        });
+    }
 
-            for (var values : parts.values()) {
-                for (Part p : values) {
-                    if (p instanceof FilePart fp) {
-                        filePart = fp;
-                    } else if (p instanceof FormFieldPart ffp) {
-                        String val = ffp.value();
-                        switch (ffp.name()) {
-                            case "displayName" -> displayName = val;
-                            case "slug" -> slug = val;
-                            case "category" -> category = val;
-                            case "summary" -> summary = val;
-                            case "coverImage" -> coverImage = val;
-                            case "tags" -> {
-                                if (val != null && !val.isBlank()) {
-                                    tags = List.of(val.split(","));
-                                }
+    private Mono<ServerResponse> updateZip(ServerRequest request) {
+        String name = request.pathVariable("name");
+        return request.multipartData().flatMap(parts -> {
+            UploadFields f = parseUploadFields(parts);
+            if (f.filePart() == null) {
+                return ServerResponse.badRequest().bodyValue("missing file part");
+            }
+            return service.updateZip(name, f.filePart(), f.displayName(),
+                    f.category(), f.summary(), f.tags())
+                .flatMap(vo -> ServerResponse.ok().bodyValue(vo))
+                .switchIfEmpty(ServerResponse.notFound().build());
+        });
+    }
+
+    private record UploadFields(FilePart filePart, String displayName, String slug,
+                                String category, String summary, String coverImage,
+                                List<String> tags) {}
+
+    private UploadFields parseUploadFields(
+            org.springframework.util.MultiValueMap<String, Part> parts) {
+        FilePart filePart = null;
+        String displayName = null;
+        String slug = null;
+        String category = null;
+        String summary = null;
+        String coverImage = null;
+        List<String> tags = List.of();
+
+        for (var values : parts.values()) {
+            for (Part p : values) {
+                if (p instanceof FilePart fp) {
+                    filePart = fp;
+                } else if (p instanceof FormFieldPart ffp) {
+                    String val = ffp.value();
+                    switch (ffp.name()) {
+                        case "displayName" -> displayName = val;
+                        case "slug" -> slug = val;
+                        case "category" -> category = val;
+                        case "summary" -> summary = val;
+                        case "coverImage" -> coverImage = val;
+                        case "tags" -> {
+                            if (val != null && !val.isBlank()) {
+                                tags = List.of(val.split(","));
                             }
                         }
                     }
                 }
             }
-            if (filePart == null) {
-                return ServerResponse.badRequest().bodyValue("missing file part");
-            }
-            if (displayName == null || displayName.isBlank()) {
-                return ServerResponse.badRequest().bodyValue("displayName is required");
-            }
-            return service.uploadZip(filePart, displayName, slug, category, summary,
-                    coverImage, tags)
-                .flatMap(vo -> ServerResponse.ok().bodyValue(vo));
-        });
+        }
+        return new UploadFields(filePart, displayName, slug, category, summary,
+                coverImage, tags);
     }
 }

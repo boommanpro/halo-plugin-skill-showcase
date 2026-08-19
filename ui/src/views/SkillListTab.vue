@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from "vue";
 import axios from "axios";
+import { VButton, VTag, VSpace, Toast } from "@halo-dev/components";
 import SkillEditorDialog from "./SkillEditorDialog.vue";
 import SkillUploadDialog from "./SkillUploadDialog.vue";
 import CategoryManager from "./CategoryManager.vue";
@@ -16,6 +17,8 @@ const showEditor = ref(false);
 const showUploader = ref(false);
 const showCategoryMgr = ref(false);
 const editingSkill = ref<any>(null);
+// 更新模式下:记录被更新的 zip skill,交给上传对话框使用
+const updatingSkill = ref<any>(null);
 
 const filteredSkills = computed(() => {
   return skills.value.filter((s) => {
@@ -55,21 +58,34 @@ async function fetchCategories() {
 
 function openCreate() {
   editingSkill.value = null;
+  updatingSkill.value = null;
+  showEditor.value = false;
+  showUploader.value = false;
   showEditor.value = true;
 }
 
 function openEdit(skill: any) {
+  updatingSkill.value = null;
+  showUploader.value = false;
   editingSkill.value = skill;
   showEditor.value = true;
+}
+
+function openUpdateZip(skill: any) {
+  editingSkill.value = null;
+  showEditor.value = false;
+  updatingSkill.value = skill;
+  showUploader.value = true;
 }
 
 async function handleDelete(name: string) {
   if (!confirm(`确定删除 Skill "${name}" 吗？`)) return;
   try {
     await axios.delete(`${apiBase}/skills/${name}`);
+    Toast.success("已删除");
     await fetchSkills();
   } catch (e) {
-    alert("删除失败");
+    Toast.error("删除失败");
   }
 }
 
@@ -90,7 +106,7 @@ async function togglePublished(skill: any) {
     await axios.put(`${apiBase}/skills/${skill.name}`, payload);
     await fetchSkills();
   } catch (e) {
-    alert("更新失败");
+    Toast.error("更新失败");
   }
 }
 
@@ -99,13 +115,22 @@ function getCategoryName(categoryId: string) {
   return cat?.displayName || categoryId;
 }
 
-function sourceTypeBadge(type: string) {
+function sourceTypeMeta(type: string) {
   const map: Record<string, { text: string; color: string }> = {
     markdown: { text: "Markdown", color: "#22c55e" },
-    zip: { text: "ZIP", color: "#3b82f6" },
+    zip: { text: "ZIP", color: "#0ea5e9" },
     external: { text: "外链", color: "#f59e0b" },
   };
   return map[type] || { text: type, color: "#6b7280" };
+}
+
+function previewSkill(skill: any) {
+  if (!skill.previewUrl) return;
+  const url =
+    /^https?:\/\//i.test(skill.previewUrl)
+      ? skill.previewUrl
+      : window.location.origin + skill.previewUrl;
+  window.open(url, "_blank");
 }
 
 onMounted(async () => {
@@ -132,15 +157,9 @@ onMounted(async () => {
           placeholder="搜索 Skill..."
           class="search-input"
         />
-        <button class="btn btn-secondary" @click="showCategoryMgr = true">
-          分类管理
-        </button>
-        <button class="btn btn-secondary" @click="showUploader = true">
-          ZIP 上传
-        </button>
-        <button class="btn btn-primary" @click="openCreate">
-          + 新增 Skill
-        </button>
+        <VButton @click="showCategoryMgr = true">分类管理</VButton>
+        <VButton @click="openUpdateZip(null)">ZIP 上传</VButton>
+        <VButton type="primary" @click="openCreate">+ 新增 Skill</VButton>
       </div>
     </div>
 
@@ -148,46 +167,34 @@ onMounted(async () => {
       <table class="skill-table">
         <thead>
           <tr>
-            <th style="width: 80px">封面</th>
             <th>名称</th>
             <th>分类</th>
             <th>类型</th>
             <th>标签</th>
-            <th style="width: 100px">排序</th>
+            <th style="width: 80px">排序</th>
             <th style="width: 80px">发布</th>
-            <th style="width: 180px">操作</th>
+            <th style="width: 300px; min-width: 300px">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="8" class="loading-cell">加载中...</td>
+            <td colspan="7" class="loading-cell">加载中...</td>
           </tr>
           <tr v-else-if="filteredSkills.length === 0">
-            <td colspan="8" class="empty-cell">暂无 Skill，点击"新增 Skill"或"ZIP 上传"添加</td>
+            <td colspan="7" class="empty-cell">暂无 Skill，点击"新增 Skill"或"ZIP 上传"添加</td>
           </tr>
           <tr v-for="skill in filteredSkills" :key="skill.name">
-            <td>
-              <div v-if="skill.coverImage" class="cover-thumb">
-                <img :src="skill.coverImage" :alt="skill.displayName" />
-              </div>
-              <div v-else class="cover-thumb placeholder">
-                {{ skill.displayName?.charAt(0) || "?" }}
-              </div>
-            </td>
             <td>
               <div class="skill-name">{{ skill.displayName }}</div>
               <div class="skill-summary">{{ skill.summary }}</div>
             </td>
             <td>
-              <span class="category-tag">{{ getCategoryName(skill.category) }}</span>
+              <VTag>{{ getCategoryName(skill.category) }}</VTag>
             </td>
             <td>
-              <span
-                class="source-badge"
-                :style="{ backgroundColor: sourceTypeBadge(skill.sourceType).color }"
-              >
-                {{ sourceTypeBadge(skill.sourceType).text }}
-              </span>
+              <VTag :color="sourceTypeMeta(skill.sourceType).color">
+                {{ sourceTypeMeta(skill.sourceType).text }}
+              </VTag>
             </td>
             <td>
               <div class="tags-cell">
@@ -211,19 +218,20 @@ onMounted(async () => {
               </label>
             </td>
             <td>
-              <div class="actions">
-                <button class="btn-link" @click="openEdit(skill)">编辑</button>
-                <button
+              <VSpace spacing="sm" :wrap="true">
+                <VButton size="sm" @click="openEdit(skill)">编辑</VButton>
+                <VButton size="sm" @click="previewSkill(skill)">预览</VButton>
+                <VButton
                   v-if="skill.sourceType === 'zip'"
-                  class="btn-link"
-                  @click="window.open(skill.previewUrl, '_blank')"
+                  size="sm"
+                  @click="openUpdateZip(skill)"
                 >
-                  预览
-                </button>
-                <button class="btn-link danger" @click="handleDelete(skill.name)">
+                  更新
+                </VButton>
+                <VButton size="sm" type="danger" @click="handleDelete(skill.name)">
                   删除
-                </button>
-              </div>
+                </VButton>
+              </VSpace>
             </td>
           </tr>
         </tbody>
@@ -240,6 +248,7 @@ onMounted(async () => {
 
     <SkillUploadDialog
       v-if="showUploader"
+      :skill="updatingSkill"
       :categories="categories"
       @close="showUploader = false"
       @uploaded="async () => { await fetchSkills(); await fetchCategories(); showUploader = false; }"
@@ -270,6 +279,7 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 600;
   margin: 0;
+  color: var(--color-text, #111827);
 }
 .toolbar-right {
   display: flex;
@@ -280,39 +290,17 @@ onMounted(async () => {
 .filter-select,
 .search-input {
   padding: 6px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border, #d1d5db);
   border-radius: 6px;
   font-size: 14px;
-  background: white;
+  background: var(--color-bg, #fff);
+  color: var(--color-text, #111827);
 }
 .search-input {
   width: 200px;
 }
-.btn {
-  padding: 6px 14px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-primary {
-  background: #3b82f6;
-  color: white;
-}
-.btn-primary:hover {
-  background: #2563eb;
-}
-.btn-secondary {
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
-}
-.btn-secondary:hover {
-  background: #e5e7eb;
-}
 .table-container {
-  background: white;
+  background: var(--color-bg, #fff);
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   overflow: hidden;
@@ -324,73 +312,39 @@ onMounted(async () => {
 .skill-table th {
   text-align: left;
   padding: 12px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--color-gray-100, #f9fafb);
+  border-bottom: 1px solid var(--color-divider, #e5e7eb);
   font-weight: 600;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--color-text-secondary, #6b7280);
 }
 .skill-table td {
   padding: 12px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--color-divider, #f3f4f6);
   font-size: 14px;
+  color: var(--color-text, #111827);
 }
 .skill-table tr:hover {
-  background: #f9fafb;
+  background: var(--color-gray-100, #f9fafb);
 }
 .loading-cell,
 .empty-cell {
   text-align: center;
   padding: 40px 20px !important;
-  color: #9ca3af;
-}
-.cover-thumb {
-  width: 48px;
-  height: 48px;
-  border-radius: 6px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f3f4f6;
-}
-.cover-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.cover-thumb.placeholder {
-  font-size: 20px;
-  font-weight: 600;
-  color: #6b7280;
-  background: #e5e7eb;
+  color: var(--color-text-secondary, #9ca3af);
 }
 .skill-name {
   font-weight: 500;
-  color: #111827;
+  color: var(--color-text, #111827);
 }
 .skill-summary {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-text-secondary, #6b7280);
   margin-top: 2px;
   max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.category-tag {
-  padding: 2px 8px;
-  background: #eff6ff;
-  color: #1d4ed8;
-  border-radius: 4px;
-  font-size: 12px;
-}
-.source-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  color: white;
 }
 .tags-cell {
   display: flex;
@@ -399,32 +353,14 @@ onMounted(async () => {
 }
 .tag {
   padding: 2px 6px;
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--color-gray-100, #f3f4f6);
+  color: var(--color-text, #374151);
   border-radius: 3px;
   font-size: 11px;
 }
 .tag.more {
   background: transparent;
-  color: #6b7280;
-}
-.actions {
-  display: flex;
-  gap: 8px;
-}
-.btn-link {
-  background: none;
-  border: none;
-  color: #3b82f6;
-  cursor: pointer;
-  font-size: 13px;
-  padding: 0;
-}
-.btn-link:hover {
-  text-decoration: underline;
-}
-.btn-link.danger {
-  color: #ef4444;
+  color: var(--color-text-secondary, #6b7280);
 }
 .switch {
   position: relative;
@@ -444,7 +380,7 @@ onMounted(async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #d1d5db;
+  background-color: var(--color-border, #d1d5db);
   transition: 0.3s;
   border-radius: 22px;
 }
@@ -455,12 +391,12 @@ onMounted(async () => {
   width: 16px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: #fff;
   transition: 0.3s;
   border-radius: 50%;
 }
 input:checked + .slider {
-  background-color: #3b82f6;
+  background-color: var(--color-primary, #00b8a6);
 }
 input:checked + .slider:before {
   transform: translateX(18px);
