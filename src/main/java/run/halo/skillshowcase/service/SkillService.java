@@ -85,8 +85,49 @@ public class SkillService {
             .flatMap(existing -> {
                 skill.getMetadata().setName(name);
                 skill.getMetadata().setVersion(existing.getMetadata().getVersion());
-                skill.getSpec().setCreatedAt(existing.getSpec().getCreatedAt());
-                skill.getSpec().setUpdatedAt(Instant.now());
+                Skill.Spec incoming = skill.getSpec();
+                Skill.Spec old = existing.getSpec();
+                // The console editor only edits a subset of fields; preserve the rest
+                // (ZIP path / entry file / parsed files, stats, author, version) so an
+                // edit does not wipe them out.
+                if (incoming.getZipPath() == null) {
+                    incoming.setZipPath(old.getZipPath());
+                }
+                if (incoming.getEntryFile() == null) {
+                    incoming.setEntryFile(old.getEntryFile());
+                }
+                if (incoming.getFiles() == null || incoming.getFiles().isEmpty()) {
+                    incoming.setFiles(old.getFiles());
+                }
+                if (incoming.getVersion() == null) {
+                    incoming.setVersion(old.getVersion());
+                }
+                if (incoming.getAuthor() == null) {
+                    incoming.setAuthor(old.getAuthor());
+                }
+                if (incoming.getAuthorAvatar() == null) {
+                    incoming.setAuthorAvatar(old.getAuthorAvatar());
+                }
+                if (incoming.getAuthorUrl() == null) {
+                    incoming.setAuthorUrl(old.getAuthorUrl());
+                }
+                if (incoming.getDownloads() == null) {
+                    incoming.setDownloads(old.getDownloads());
+                }
+                if (incoming.getRating() == null) {
+                    incoming.setRating(old.getRating());
+                }
+                if (incoming.getRatingCount() == null) {
+                    incoming.setRatingCount(old.getRatingCount());
+                }
+                if (incoming.getFavorites() == null) {
+                    incoming.setFavorites(old.getFavorites());
+                }
+                if (incoming.getInstallCommand() == null) {
+                    incoming.setInstallCommand(old.getInstallCommand());
+                }
+                incoming.setCreatedAt(old.getCreatedAt());
+                incoming.setUpdatedAt(Instant.now());
                 return client.update(skill);
             })
             .flatMap(s -> getCategoryMap().map(catMap -> toVo(s, catMap)));
@@ -234,6 +275,12 @@ public class SkillService {
         //     no index.html required; browsed with a VSCode-style file tree.
         boolean isWebsite = Files.isRegularFile(skillDir.resolve("index.html"));
         String entryFile = isWebsite ? null : findEntryFile(skillDir);
+        if (!isWebsite && entryFile == null) {
+            storage.deleteQuietly(skillDir);
+            throw new ServerWebInputException(
+                "zip must contain an index.html (website package) or a markdown entry "
+                    + "(SKILL.md / README.md) in its root or single top-level directory");
+        }
         Skill skill = new Skill();
         skill.getMetadata().setName(slug);
         skill.setSpec(new Skill.Spec());
@@ -499,8 +546,9 @@ public class SkillService {
             return nodes;
         }
         // directories first, then files, each alphabetically
+        // (Boolean.compare(false, true) < 0 so dirs(true) come before files(false))
         sorted.sort((a, b) -> {
-            int cmp = Boolean.compare(a.getKey(), b.getKey()); // dirs(true) before files(false)
+            int cmp = Boolean.compare(b.getKey(), a.getKey());
             if (cmp != 0) return cmp;
             return a.getValue().getFileName().toString().compareToIgnoreCase(
                     b.getValue().getFileName().toString());
