@@ -25,8 +25,12 @@ public class SkillCategoryService {
 
     public Mono<SkillCategoryVo> create(SkillCategory category) {
         if (category.getMetadata().getName() == null) {
+            String displayName = category.getSpec() != null ? category.getSpec().getDisplayName() : null;
+            if (displayName == null || displayName.isBlank()) {
+                return Mono.error(new IllegalArgumentException("Category displayName is required"));
+            }
             category.getMetadata().setName(
-                category.getSpec().getDisplayName().toLowerCase().replaceAll("[^a-z0-9\\-]", "-"));
+                displayName.toLowerCase().replaceAll("[^a-z0-9\\-]", "-"));
         }
         if (category.getSpec().getSortOrder() == null) {
             category.getSpec().setSortOrder(0);

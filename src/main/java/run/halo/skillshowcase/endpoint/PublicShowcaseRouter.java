@@ -224,8 +224,19 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
 
     private Mono<ServerResponse> getRelatedSkills(ServerRequest request) {
         String name = getPathVar(request, "name");
-        int limit = request.queryParam("limit").map(Integer::parseInt).orElse(4);
+        int limit = request.queryParam("limit").map(PublicShowcaseRouter::parseLimit).orElse(4);
         return ServerResponse.ok().body(skillService.getRelatedSkills(name, limit), SkillVo.class);
+    }
+
+    /**
+     * 解析 limit 参数：非法输入回退默认值 4，并限制在 [1, 50] 防止异常与超大查询。
+     */
+    private static int parseLimit(String raw) {
+        try {
+            return Math.max(1, Math.min(50, Integer.parseInt(raw.trim())));
+        } catch (NumberFormatException e) {
+            return 4;
+        }
     }
 
     private Mono<ServerResponse> getFileTree(ServerRequest request) {
@@ -250,22 +261,14 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .bodyValue(bytes);
             })
-            // increment the download counter in the background
-            .doOnSuccess(resp -> skillService.incrementDownloads(name).subscribe())
+            // increment the download counter in the background; never let counter
+            // errors break the download response
+            .doOnSuccess(resp -> skillService.incrementDownloads(name)
+                .doOnError(err -> log.warn("Failed to increment downloads for {}: {}",
+                    name, err.getMessage()))
+                .onErrorResume(err -> Mono.empty())
+                .subscribe())
             .switchIfEmpty(ServerResponse.notFound().build());
-    }
-
-    private Mono<ServerResponse> serveShowcaseIndex(ServerRequest request) {
-        String name = getPathVar(request, "name");
-        Path dir = skillService.skillDir(name);
-        if (!Files.exists(dir)) {
-            return ServerResponse.notFound().build();
-        }
-        Path index = dir.resolve("index.html");
-        if (!Files.exists(index)) {
-            return ServerResponse.notFound().build();
-        }
-        return writeFile(index);
     }
 
     private String getPathVar(ServerRequest request, String name) {
@@ -276,36 +279,37 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
     private Mono<ServerResponse> serveShowcaseFile(ServerRequest request) {
         String name = getPathVar(request, "name");
         String rest = request.attributes().getOrDefault("rest", "").toString();
-        
+
         if (rest.isEmpty()) {
             return serveSkillPageOrIndex(request);
         }
-        
+
         String safe = ZipExtractorService.sanitizeForUrlPath(rest);
         if (safe == null) {
             return ServerResponse.badRequest().bodyValue("invalid path");
         }
-        Path dir = skillService.skillDir(name);
-        if (!Files.exists(dir)) {
-            return ServerResponse.notFound().build();
-        }
-        Path target = dir.resolve(safe).normalize();
-        if (!target.startsWith(dir) || !Files.exists(target) || Files.isDirectory(target)) {
-            return ServerResponse.notFound().build();
-        }
-        return writeFile(target);
+        // 仅已发布的 ZIP 技能允许对外提供文件，防止草稿内容被匿名访问
+        return skillService.getPublicByName(name)
+            .filter(s -> "zip".equals(s.sourceType()))
+            .flatMap(s -> {
+                Path dir = skillService.skillDir(name);
+                Path target = dir.resolve(safe).normalize();
+                if (!target.startsWith(dir) || !Files.exists(target) || Files.isDirectory(target)) {
+                    return ServerResponse.notFound().build();
+                }
+                return writeFile(target);
+            })
+            .switchIfEmpty(ServerResponse.notFound().build());
     }
 
     private Mono<ServerResponse> loadHtmlResource(String resourcePath) {
-        try {
-            ClassLoader classLoader = getClass().getClassLoader();
-            java.io.InputStream is = classLoader.getResourceAsStream(resourcePath);
+        ClassLoader classLoader = getClass().getClassLoader();
+        try (java.io.InputStream is = classLoader.getResourceAsStream(resourcePath)) {
             if (is == null) {
                 log.error("Resource not found: {}", resourcePath);
                 return ServerResponse.notFound().build();
             }
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            is.close();
             return ServerResponse.ok()
                 .contentType(MediaType.parseMediaType("text/html;charset=utf-8"))
                 .bodyValue(content);

@@ -62,6 +62,7 @@ public class SkillCategoryEndpoint implements RouterFunction<ServerResponse> {
         String name = request.pathVariable("name");
         return service.delete(name)
             .then(ServerResponse.ok().build())
-            .onErrorResume(e -> ServerResponse.notFound().build());
+            // 仅「不存在」映射为 404，其余异常如实上抛
+            .onErrorResume(IllegalArgumentException.class, e -> ServerResponse.notFound().build());
     }
 }

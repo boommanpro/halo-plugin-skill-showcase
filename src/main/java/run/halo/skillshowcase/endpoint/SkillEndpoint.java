@@ -11,6 +11,7 @@ import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
+import org.springframework.web.server.ServerWebInputException;
 import reactor.core.publisher.Mono;
 import run.halo.skillshowcase.dto.SkillVo;
 import run.halo.skillshowcase.extension.Skill;
@@ -68,7 +69,8 @@ public class SkillEndpoint implements RouterFunction<ServerResponse> {
         String name = request.pathVariable("name");
         return service.delete(name)
             .then(ServerResponse.ok().build())
-            .onErrorResume(e -> ServerResponse.notFound().build());
+            // 仅「不存在」映射为 404，其余异常（并发、权限等）如实上抛，避免掩盖真实错误
+            .onErrorResume(ServerWebInputException.class, e -> ServerResponse.notFound().build());
     }
 
     private Mono<ServerResponse> uploadZip(ServerRequest request) {
