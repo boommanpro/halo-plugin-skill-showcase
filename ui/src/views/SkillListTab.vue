@@ -287,7 +287,14 @@ onMounted(async () => {
               </div>
             </td>
             <td class="stats-cell">
-              👁 {{ formatCount(skill.views) }} · ⬇ {{ formatCount(skill.downloads) }}
+              <span class="stat-inline" title="浏览">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                {{ formatCount(skill.views) }}
+              </span>
+              <span class="stat-inline" title="下载">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                {{ formatCount(skill.downloads) }}
+              </span>
             </td>
             <td>{{ skill.sortOrder ?? 0 }}</td>
             <td>
@@ -455,6 +462,17 @@ onMounted(async () => {
   font-size: 12.5px;
   color: var(--color-text-secondary, #6b7280);
   white-space: nowrap;
+}
+.stat-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 10px;
+}
+.stat-inline svg {
+  width: 13px;
+  height: 13px;
+  opacity: 0.7;
 }
 .skill-summary {
   font-size: 12px;
