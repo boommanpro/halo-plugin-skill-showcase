@@ -1007,6 +1007,8 @@
             try {
                 const skill = await fetch(`${API_BASE}/skills/${encodeURIComponent(skillName)}`).then(r => r.json());
                 skillData = skill;
+                // 浏览埋点：失败静默
+                fetch(`${API_BASE}/skills/${encodeURIComponent(skillName)}/view`).catch(() => {});
                 document.getElementById('breadcrumb-name').textContent = skill.displayName || skill.name;
                 if (skill.categoryName) {
                     document.getElementById('breadcrumb-category').textContent = skill.categoryName;
@@ -1014,7 +1016,8 @@
                 }
 
                 renderSkillHeader(skill);
-                if (skill.sourceType === 'zip' && skill.entryFile) {
+                const isPackage = skill.sourceType === 'zip' || skill.sourceType === 'github';
+                if (isPackage && skill.entryFile) {
                     // skillhub-style package (no index.html): VSCode-style file browser,
                     // defaulting to the markdown entry (SKILL.md / README.md)
                     renderSkillHubBrowser(skill);
@@ -1066,7 +1069,8 @@
             const authorInitial = getInitial(skill.author || '匿名');
 
             let typeLabel = '文档';
-            if (skill.sourceType === 'external') typeLabel = '外链';
+            if (skill.sourceType === 'github') typeLabel = 'GitHub';
+            else if (skill.sourceType === 'external') typeLabel = '外链';
             else if (skill.files && skill.files.length > 0) typeLabel = '项目';
 
             const badges = [];
@@ -1074,6 +1078,9 @@
                 badges.push(`<span class="badge badge-category">${escapeHtml(skill.categoryName)}</span>`);
             }
             badges.push(`<span class="badge badge-type">${typeLabel}</span>`);
+            if (skill.sourceRepo) {
+                badges.push(`<a class="badge badge-type" href="https://github.com/${escapeHtml(skill.sourceRepo)}" target="_blank" rel="noopener" style="text-decoration:none;">${escapeHtml(skill.sourceRepo)}</a>`);
+            }
             if (skill.published) {
                 badges.push(`<span class="badge badge-status">已发布</span>`);
             } else {
@@ -1085,6 +1092,7 @@
                 : '';
 
             const downloads = skill.downloads ?? 0;
+            const views = skill.views ?? 0;
             const rating = skill.rating ?? 0;
             const ratingCount = skill.ratingCount ?? 0;
             let starsHtml = '';
@@ -1118,6 +1126,11 @@
                     </div>
 
                     <div class="stats-row">
+                        <div class="stat-item" title="浏览量">
+                            ${ICONS.clock}
+                            <span class="stat-value">${formatNumber(views)}</span>
+                            <span>浏览</span>
+                        </div>
                         <div class="stat-item" title="下载量">
                             ${ICONS.download}
                             <span class="stat-value">${formatNumber(downloads)}</span>
@@ -1135,7 +1148,7 @@
                             ${ICONS.download}
                             <span>下载</span>
                         </button>
-                        <button class="action-btn" onclick="copyInstallCmd()">
+                        <button class="action-btn" onclick="copyPrimaryInstallCmd()">
                             ${ICONS.terminal}
                             <span>复制安装命令</span>
                         </button>
@@ -1295,22 +1308,27 @@
 
         function renderInstallSection(skill) {
             const el = document.getElementById('install-section');
-            const installCmd = buildInstallCmd();
+            const cmds = buildInstallCmds(skill);
             el.innerHTML = `
                 <div class="install-section">
                     <h3>${ICONS.terminal} 安装命令</h3>
-                    <p>根据您的操作系统，使用以下命令下载并安装此技能包</p>
-                    <div class="install-code-box">
-                        <div class="install-code-header">
-                            <span class="install-code-title">${installCmd.os}</span>
-                            <button class="copy-btn" onclick="copyText(\`${escapeHtml(installCmd.cmd)}\`).then(()=>showToast('安装命令已复制'))">
-                                ${ICONS.copy}复制
-                            </button>
+                    <p>${skill.sourceRepo
+                        ? '推荐使用 npx skills 一行命令安装（自动适配 Claude Code / ZCode / Cursor 等 75+ 客户端，需 Node.js 22+）；也可从本站下载 ZIP 手动安装'
+                        : '根据您的操作系统，使用以下命令下载并安装此技能包'}</p>
+                    ${cmds.map((c, i) => `
+                        <div class="install-code-box" style="margin-bottom:10px;">
+                            <div class="install-code-header">
+                                <span class="install-code-title">${c.os}</span>
+                                <button class="copy-btn" onclick="copyText(\`${escapeHtml(c.cmd)}\`).then(()=>showToast('安装命令已复制'))">
+                                    ${ICONS.copy}复制
+                                </button>
+                            </div>
+                            <div class="install-code-body">
+                                <pre><code>${escapeHtml(c.cmd)}</code></pre>
+                            </div>
+                            ${c.hint ? `<div class="install-code-header" style="border-top:1px solid var(--border);"><span class="install-code-title" style="font-weight:400;color:var(--text-muted);">${escapeHtml(c.hint)}</span></div>` : ''}
                         </div>
-                        <div class="install-code-body">
-                            <pre><code id="install-cmd">${escapeHtml(installCmd.cmd)}</code></pre>
-                        </div>
-                    </div>
+                    `).join('')}
                 </div>
             `;
         }
@@ -1319,23 +1337,35 @@
             return API_BASE + '/skills/' + encodeURIComponent(skillName) + '/download';
         }
 
-        // Generate an install command that downloads the package from this site's
-        // download endpoint and unpacks it, adapted to the visitor's operating system.
-        function buildInstallCmd() {
+        /**
+         * Install command candidates. GitHub-hosted skills prefer the npx skills
+         * ecosystem command; platform-specific download commands from this site's
+         * ZIP endpoint are always offered as fallback.
+         */
+        function buildInstallCmds(skill) {
             const url = new URL(downloadUrl(), location.origin).toString();
             const safeName = encodeURIComponent(skillName);
-            const win = /win/i.test(navigator.platform) || /windows/i.test(navigator.userAgent);
-            const mac = /mac|iphone|ipad/i.test(navigator.platform);
-            if (win) {
-                return {
-                    os: 'powershell',
-                    cmd: `$dir = Join-Path $env:USERPROFILE '.halo\\skills'; New-Item -ItemType Directory -Force -Path $dir | Out-Null; Invoke-WebRequest -Uri '${url}' -OutFile (Join-Path $dir '${safeName}.zip'); Expand-Archive -Path (Join-Path $dir '${safeName}.zip') -DestinationPath (Join-Path $dir '${safeName}') -Force`
-                };
+            const cmds = [];
+            if (skill.sourceRepo) {
+                cmds.push({
+                    os: 'npx（推荐）',
+                    cmd: `npx skills add ${skill.sourceRepo}`,
+                    hint: skill.sourceSubdir
+                        ? `技能位于仓库子目录 ${skill.sourceSubdir}，若命令未能定位请使用下方命令下载后解压`
+                        : '自动识别本机已安装的 AI 客户端并安装到对应 skills 目录'
+                });
             }
-            return {
-                os: mac ? 'macOS / bash' : 'Linux / bash',
-                cmd: `mkdir -p "$HOME/.halo/skills" && curl -fsSL '${url}' -o "$HOME/.halo/skills/${safeName}.zip" && unzip -o "$HOME/.halo/skills/${safeName}.zip" -d "$HOME/.halo/skills/${safeName}"`
-            };
+            cmds.push({
+                os: 'macOS / Linux · bash',
+                cmd: `mkdir -p "$HOME/.claude/skills" && curl -fsSL '${url}' -o "/tmp/${safeName}.zip" && unzip -o "/tmp/${safeName}.zip" -d "$HOME/.claude/skills/${safeName}"`,
+                hint: '解压到 Claude Code 全局技能目录 ~/.claude/skills（其他客户端请替换为目标目录）'
+            });
+            cmds.push({
+                os: 'Windows · PowerShell',
+                cmd: `$dir = Join-Path $env:USERPROFILE '.claude\\skills\\${safeName}'; New-Item -ItemType Directory -Force -Path $dir | Out-Null; Invoke-WebRequest -Uri '${url}' -OutFile "$env:TEMP\\${safeName}.zip"; Expand-Archive -Path "$env:TEMP\\${safeName}.zip" -DestinationPath $dir -Force`,
+                hint: '解压到 Claude Code 全局技能目录 %USERPROFILE%\\.claude\\skills（其他客户端请替换为目标目录）'
+            });
+            return cmds;
         }
 
         function downloadSkillZip() {
@@ -1392,11 +1422,13 @@
             }
         }
 
-        function copyInstallCmd() {
-            const cmd = buildInstallCmd().cmd;
-            copyText(cmd).then(() => {
-                showToast('安装命令已复制');
-            });
+        function copyPrimaryInstallCmd() {
+            const cmds = buildInstallCmds(skillData || {});
+            if (cmds.length) {
+                copyText(cmds[0].cmd).then(() => {
+                    showToast('安装命令已复制');
+                });
+            }
         }
 
         /* ----- skillhub-style VSCode file browser ----- */

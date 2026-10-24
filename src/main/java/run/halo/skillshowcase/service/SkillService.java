@@ -126,6 +126,24 @@ public class SkillService {
                 if (incoming.getInstallCommand() == null) {
                     incoming.setInstallCommand(old.getInstallCommand());
                 }
+                if (incoming.getSourceRepo() == null) {
+                    incoming.setSourceRepo(old.getSourceRepo());
+                }
+                if (incoming.getSourceSubdir() == null) {
+                    incoming.setSourceSubdir(old.getSourceSubdir());
+                }
+                if (incoming.getSourceRef() == null) {
+                    incoming.setSourceRef(old.getSourceRef());
+                }
+                if (incoming.getUpstreamCommit() == null) {
+                    incoming.setUpstreamCommit(old.getUpstreamCommit());
+                }
+                if (incoming.getUpstreamVersion() == null) {
+                    incoming.setUpstreamVersion(old.getUpstreamVersion());
+                }
+                if (incoming.getViews() == null) {
+                    incoming.setViews(old.getViews());
+                }
                 incoming.setCreatedAt(old.getCreatedAt());
                 incoming.setUpdatedAt(Instant.now());
                 return client.update(skill);
@@ -137,7 +155,7 @@ public class SkillService {
         return client.fetch(Skill.class, name)
             .switchIfEmpty(Mono.error(new ServerWebInputException("Skill not found: " + name)))
             .flatMap(skill -> {
-                if ("zip".equals(skill.getSpec().getSourceType())) {
+                if (isPackageType(skill.getSpec().getSourceType())) {
                     storage.deleteQuietly(storage.skillDir(name));
                 }
                 return client.delete(skill);
@@ -406,7 +424,7 @@ public class SkillService {
 
     private SkillVo toVo(Skill s, Map<String, SkillCategoryVo> catMap) {
         String previewUrl = null;
-        if ("zip".equals(s.getSpec().getSourceType())) {
+        if (isPackageType(s.getSpec().getSourceType())) {
             previewUrl = "/showcase/" + s.getMetadata().getName() + "/";
         } else if ("external".equals(s.getSpec().getSourceType())) {
             previewUrl = s.getSpec().getExternalUrl();
@@ -466,8 +484,24 @@ public class SkillService {
             s.getSpec().getRating() != null ? s.getSpec().getRating() : 0.0,
             s.getSpec().getRatingCount() != null ? s.getSpec().getRatingCount() : 0L,
             s.getSpec().getFavorites() != null ? s.getSpec().getFavorites() : 0L,
-            s.getSpec().getInstallCommand()
+            s.getSpec().getInstallCommand(),
+            s.getSpec().getSourceRepo(),
+            s.getSpec().getSourceSubdir(),
+            s.getSpec().getSourceRef(),
+            s.getSpec().getUpstreamVersion(),
+            s.getSpec().getViews() != null ? s.getSpec().getViews() : 0L
         );
+    }
+
+    public Mono<SkillVo> incrementViews(String name) {
+        return client.fetch(Skill.class, name)
+            .switchIfEmpty(Mono.error(new ServerWebInputException("Skill not found: " + name)))
+            .flatMap(skill -> {
+                Long views = skill.getSpec().getViews();
+                skill.getSpec().setViews((views != null ? views : 0L) + 1);
+                return client.update(skill);
+            })
+            .flatMap(s -> getCategoryMap().map(catMap -> toVo(s, catMap)));
     }
 
     public Mono<SkillVo> incrementDownloads(String name) {
@@ -502,12 +536,15 @@ public class SkillService {
                 long published = skills.stream().filter(s -> Boolean.TRUE.equals(s.getSpec().getPublished())).count();
                 long totalDownloads = skills.stream()
                     .mapToLong(s -> s.getSpec().getDownloads() != null ? s.getSpec().getDownloads() : 0L).sum();
+                long totalViews = skills.stream()
+                    .mapToLong(s -> s.getSpec().getViews() != null ? s.getSpec().getViews() : 0L).sum();
                 long totalFavorites = skills.stream()
                     .mapToLong(s -> s.getSpec().getFavorites() != null ? s.getSpec().getFavorites() : 0L).sum();
                 Map<String, Object> stats = new HashMap<>();
                 stats.put("totalSkills", total);
                 stats.put("publishedSkills", published);
                 stats.put("totalDownloads", totalDownloads);
+                stats.put("totalViews", totalViews);
                 stats.put("totalFavorites", totalFavorites);
                 stats.put("totalCategories", skills.stream()
                     .map(s -> s.getSpec().getCategory()).filter(Objects::nonNull).distinct().count());
@@ -545,6 +582,14 @@ public class SkillService {
 
     public static boolean isValidSlug(String slug) {
         return slug != null && SLUG_PATTERN.matcher(slug).matches();
+    }
+
+    /**
+     * Disk-backed package skills: uploaded ZIPs and GitHub imports share the same
+     * storage / browsing / download pipeline.
+     */
+    public static boolean isPackageType(String sourceType) {
+        return "zip".equals(sourceType) || "github".equals(sourceType);
     }
 
     private static String normalizeSlug(String raw) {
@@ -667,9 +712,63 @@ public class SkillService {
     }
 
     /**
-     * Re-package the extracted skill directory back into a single zip (for download).
-     * Hidden files and macOS metadata are skipped.
+     * Re-package a skill into a downloadable zip. Package skills (zip / github)
+     * are archived from their storage directory; markdown skills are packaged
+     * from their inline content / file list on the fly.
      */
+    public byte[] zipContent(Skill skill) {
+        String sourceType = skill.getSpec().getSourceType();
+        if (isPackageType(sourceType)) {
+            Path root = storage.skillDir(skill.getMetadata().getName());
+            if (!Files.isDirectory(root)) {
+                throw new ServerWebInputException(
+                    "skill storage not found: " + skill.getMetadata().getName());
+            }
+            try (var bos = new java.io.ByteArrayOutputStream();
+                 var zos = new java.util.zip.ZipOutputStream(bos)) {
+                zipDir(zos, root, root, "");
+                zos.finish();
+                return bos.toByteArray();
+            } catch (IOException e) {
+                throw new RuntimeException(
+                    "failed to archive skill: " + skill.getMetadata().getName(), e);
+            }
+        }
+        if ("markdown".equals(sourceType)) {
+            String slug = skill.getMetadata().getName();
+            try (var bos = new java.io.ByteArrayOutputStream();
+                 var zos = new java.util.zip.ZipOutputStream(bos)) {
+                boolean wroteEntry = false;
+                if (skill.getSpec().getFiles() != null) {
+                    for (SkillFile f : skill.getSpec().getFiles()) {
+                        if (f.getPath() == null || f.getContent() == null) {
+                            continue;
+                        }
+                        zos.putNextEntry(new java.util.zip.ZipEntry(f.getPath()));
+                        zos.write(f.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        zos.closeEntry();
+                        wroteEntry = true;
+                    }
+                }
+                if (!wroteEntry && skill.getSpec().getContent() != null) {
+                    zos.putNextEntry(new java.util.zip.ZipEntry(
+                        slug + "/SKILL.md"));
+                    zos.write(skill.getSpec().getContent()
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    zos.closeEntry();
+                }
+                zos.finish();
+                return bos.toByteArray();
+            } catch (IOException e) {
+                throw new RuntimeException("failed to archive skill: " + slug, e);
+            }
+        }
+        throw new ServerWebInputException(
+            "该类型技能不支持打包下载：" + sourceType);
+    }
+
+    /** @deprecated use {@link #zipContent(Skill)}; kept for existing callers. */
+    @Deprecated
     public byte[] zipContent(String name) {
         Path root = storage.skillDir(name);
         if (!Files.isDirectory(root)) {

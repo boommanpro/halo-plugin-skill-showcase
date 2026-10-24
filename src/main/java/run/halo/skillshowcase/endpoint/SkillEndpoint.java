@@ -13,8 +13,11 @@ import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import org.springframework.web.server.ServerWebInputException;
 import reactor.core.publisher.Mono;
+import run.halo.skillshowcase.dto.GitHubImportRequest;
 import run.halo.skillshowcase.dto.SkillVo;
 import run.halo.skillshowcase.extension.Skill;
+import run.halo.skillshowcase.service.GitHubImportService;
+import run.halo.skillshowcase.service.GitHubClient;
 import run.halo.skillshowcase.service.SkillService;
 
 @Component
@@ -24,15 +27,23 @@ public class SkillEndpoint implements RouterFunction<ServerResponse> {
     private static final String PREFIX = "/apis/console.api.skill-showcase.halo.run/v1alpha1";
 
     private final SkillService service;
+    private final GitHubImportService importService;
+    private final GitHubClient githubClient;
 
     private final RouterFunction<ServerResponse> delegate = RouterFunctions.route()
         .GET(PREFIX + "/skills", this::list)
+        // 具名路由必须注册在 /skills/{name} 之前，否则会被当成 name=github-probe
+        .GET(PREFIX + "/net-diag", this::githubProbe)
         .POST(PREFIX + "/skills", this::create)
         .GET(PREFIX + "/skills/{name}", this::get)
         .PUT(PREFIX + "/skills/{name}", this::update)
         .DELETE(PREFIX + "/skills/{name}", this::delete)
         .POST(PREFIX + "/skills/upload", this::uploadZip)
         .PUT(PREFIX + "/skills/{name}/upload", this::updateZip)
+        .POST(PREFIX + "/skills/ghimport/preview", this::previewImport)
+        .POST(PREFIX + "/skills/ghimport", this::importFromGitHub)
+        .POST(PREFIX + "/skills/{name}/check-upstream", this::checkUpstream)
+        .POST(PREFIX + "/skills/{name}/sync", this::syncSkill)
         .build();
 
     @Override
@@ -100,6 +111,89 @@ public class SkillEndpoint implements RouterFunction<ServerResponse> {
                 .flatMap(vo -> ServerResponse.ok().bodyValue(vo))
                 .switchIfEmpty(ServerResponse.notFound().build());
         });
+    }
+
+    /** 最近一次 preview 的服务端时间线（诊断 POST 504 用），url → receivedAt/finishedAt。 */
+    static final java.util.Map<String, String> RECENT_PREVIEWS =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
+    private Mono<ServerResponse> previewImport(ServerRequest request) {
+        long received = System.currentTimeMillis();
+        String queryUrl = request.queryParam("url").orElse(null);
+        Mono<String> urlMono = (queryUrl != null && !queryUrl.isBlank())
+            ? Mono.just(queryUrl)
+            : request.bodyToMono(GitHubImportRequest.class)
+                .map(req -> req.url() == null ? "" : req.url());
+        return urlMono
+            .flatMap(url -> {
+                if (url.isBlank()) {
+                    return Mono.error(new ServerWebInputException("url is required"));
+                }
+                RECENT_PREVIEWS.put(url, "received@" + received);
+                return importService.preview(url)
+                    .doOnSuccess(p -> RECENT_PREVIEWS.put(url,
+                        "received@" + received + " → done@" + System.currentTimeMillis()
+                            + " (" + (System.currentTimeMillis() - received) + "ms) "
+                            + p.displayName()))
+                    .flatMap(preview -> ServerResponse.ok().bodyValue(preview));
+            })
+            .onErrorResume(e -> {
+                String url = queryUrl != null ? queryUrl : "?";
+                RECENT_PREVIEWS.put(url, "received@" + received + " → error@"
+                    + System.currentTimeMillis() + ": " + e.getMessage());
+                if (e instanceof ServerWebInputException swe) {
+                    return ServerResponse.badRequest().bodyValue(
+                        java.util.Map.of("detail", String.valueOf(swe.getMessage())));
+                }
+                if (e instanceof org.springframework.core.codec.DecodingException de) {
+                    return ServerResponse.badRequest().bodyValue(
+                        java.util.Map.of("detail", "请求体解析失败: " + de.getMessage()));
+                }
+                return Mono.error(e);
+            });
+    }
+
+    private Mono<ServerResponse> importFromGitHub(ServerRequest request) {
+        return request.bodyToMono(GitHubImportRequest.class)
+            .flatMap(req -> {
+                if (req.url() == null || req.url().isBlank()) {
+                    return ServerResponse.badRequest().bodyValue("url is required");
+                }
+                return importService.importSkill(req.url(), req.slug(), req.displayName(),
+                        req.category(), req.summary(), req.tags(), req.published())
+                    .flatMap(vo -> ServerResponse.ok().bodyValue(vo))
+                    .onErrorResume(e -> {
+                        java.io.StringWriter sw = new java.io.StringWriter();
+                        e.printStackTrace(new java.io.PrintWriter(sw));
+                        String stack = sw.toString();
+                        return ServerResponse.status(500).bodyValue(java.util.Map.of(
+                            "debug", true,
+                            "errorClass", e.getClass().getName(),
+                            "message", String.valueOf(e.getMessage()),
+                            "stack", stack.length() > 3000 ? stack.substring(0, 3000) : stack));
+                    });
+            });
+    }
+
+    private Mono<ServerResponse> checkUpstream(ServerRequest request) {
+        String name = request.pathVariable("name");
+        return importService.checkUpstream(name)
+            .flatMap(status -> ServerResponse.ok().bodyValue(status));
+    }
+
+    /** Diagnose the server's reachability to GitHub and its mirrors. */
+    private Mono<ServerResponse> githubProbe(ServerRequest request) {
+        return githubClient.diagnoseChannels()
+            .flatMap(base -> {
+                base.put("recentPreviews", new java.util.LinkedHashMap<>(RECENT_PREVIEWS));
+                return ServerResponse.ok().bodyValue(base);
+            });
+    }
+
+    private Mono<ServerResponse> syncSkill(ServerRequest request) {
+        String name = request.pathVariable("name");
+        return importService.syncNow(name)
+            .flatMap(vo -> ServerResponse.ok().bodyValue(vo));
     }
 
     private record UploadFields(FilePart filePart, String displayName, String slug,

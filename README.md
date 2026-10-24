@@ -1,27 +1,36 @@
 # Halo Plugin Skill Showcase
 
-在 [Halo](https://halo.run) 博客中管理和展示技能作品集（Skill），支持 **Markdown 文档**、**ZIP 演示站 / 项目包** 和 **外链** 三种内容形态，并内置一套完整的前端展示页面。
+在 [Halo](https://halo.run) 博客中管理和展示技能作品集（Skill），支持 **GitHub 仓库导入**、**Markdown 文档**、**ZIP 演示站 / 项目包** 和 **外链** 四种内容形态，内置一套完整的前端展示页面。
 
 > 在线示例：<https://boommanpro.cn/skill>
 
 ## 功能特性
 
-- **三种内容类型**
+- **GitHub 导入与同步（0.2.0 新增）**
+  - 管理端粘贴 GitHub 仓库地址（支持 `owner/repo`、`github.com/owner/repo/tree/branch/subdir`），一键解析 SKILL.md frontmatter（名称 / 描述 / 版本）并导入
+  - 「检查更新」比对上游 HEAD commit，「同步」一键拉取上游最新内容（分类 / 标签 / 发布状态保留）
+  - 下载策略（国内主机实测优化）：GitHub trees API 列文件 + raw.githubusercontent 逐文件并行下载（不占 API 配额），contents API 兜底
+  - 可选：创建 ConfigMap `skill-showcase-config`（data 键 `githubToken`）配置 GitHub Token —— **匿名 API 限流 60 次/小时，频繁导入建议配置**
+  - 网络排查：`GET /apis/console.api.skill-showcase.halo.run/v1alpha1/net-diag` 一键探测服务器到 GitHub 各通道的连通性与延迟
+- **四种内容类型**
+  - `github`：仓库导入的技能包，前台展示 GitHub 徽标与 `npx skills add owner/repo` 一键安装命令
   - `markdown`：直接填写/导入 Markdown 内容，前台渲染为图文文档
   - `zip`：上传 ZIP 包，支持两种子类型
     - 网站包：包含 `index.html`，前台直接打开为可交互演示站（带 iframe 预览）
     - 项目包（skillhub 风格）：以 `SKILL.md → README.md → 首个 .md` 作为入口，前台以 VSCode 风格文件树 + 代码查看器浏览
   - `external`：外链，前台一键跳转访问
 - **管理端可视化**：Skill 管理 + 分类管理，内置在 Halo 后台
-  - 增删改查、发布/下架、搜索、分类筛选
+  - 增删改查、发布/下架、搜索、分类筛选、浏览/下载统计列
   - ZIP 类型支持**在线更新**（重新上传替换，slug 不变）
   - 所有类型均支持**预览**
   - 标签可直接内联编辑，分类可配置显示名
 - **前台展示页**
-  - 技能卡片列表（分类筛选 + 搜索 + 排序）
-  - 详情页：文件树 + Markdown/代码渲染 + 下载 + 一键复制安装命令
-  - 数据统计页、相关技能推荐
-  - 亮/暗色模式自适应、响应式布局
+  - 技能卡片列表（分类筛选 + 搜索 + 排序 + 浏览/下载计数）
+  - 详情页：文件树 + Markdown/代码渲染 + 下载 + 安装命令
+    - GitHub 来源优先展示 `npx skills add` 命令（自动适配 Claude Code / ZCode / Cursor 等 75+ 客户端）
+    - 同时提供 bash / PowerShell 平台命令（从本站 `/showcase-api/skills/{name}/download` 下载解压）
+  - 浏览量 / 下载量自动统计（`/showcase-api/skills/{name}/view` 埋点）
+  - 数据统计页、相关技能推荐、亮/暗色模式自适应、响应式布局
 - **示例集成**：可直接挂在主题下作为自定义页面（如下方示例网站的 `/skill`），也可使用插件自带的 `/showcase` 页面
 
 ## 环境要求
@@ -49,6 +58,7 @@
 
 | 类型 | 操作 |
 |---|---|
+| GitHub | 点击「GitHub 导入」，粘贴仓库地址（如 `anthropics/skills` 或 `github.com/owner/repo/tree/main/skills/xxx`），解析预览后选择分类即可导入；之后可随时「检查更新 / 同步」 |
 | Markdown | 在编辑器中填写或粘贴 Markdown 内容 |
 | ZIP | 上传 ZIP 文件（需在根目录或单层顶层目录包含 `index.html` 或 Markdown 入口文件，≤ 50MB），可自定义 slug；后续可「更新」重新上传 |
 | 外链 | 填写外部 URL 地址 |

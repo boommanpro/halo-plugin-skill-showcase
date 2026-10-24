@@ -20,6 +20,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 import run.halo.skillshowcase.dto.SkillCategoryVo;
 import run.halo.skillshowcase.dto.SkillVo;
+import run.halo.skillshowcase.extension.Skill;
 import run.halo.skillshowcase.service.SkillCategoryService;
 import run.halo.skillshowcase.service.SkillService;
 import run.halo.skillshowcase.service.ZipExtractorService;
@@ -72,6 +73,11 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
             request.attributes().put("name", name);
             return Mono.just(this::downloadZip);
         }
+        if (relativePath.matches("/skills/[^/]+/view")) {
+            String name = extractPathSegment(relativePath, 2);
+            request.attributes().put("name", name);
+            return Mono.just(this::countView);
+        }
         if (relativePath.matches("/skills/[^/]+")) {
             String name = extractPathSegment(relativePath, 2);
             request.attributes().put("name", name);
@@ -115,13 +121,13 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
             return Mono.just(this::serveShowcaseApp);
         }
 
-        // ZIP skill detail or file: /showcase/{name} or /showcase/{name}/...
+        // Package skill detail or file: /showcase/{name} or /showcase/{name}/...
         if (relativePath.startsWith("/")) {
             String afterSlash = relativePath.substring(1);
             int nextSlash = afterSlash.indexOf('/');
 
             if (nextSlash < 0) {
-                // /showcase/{name} - check if ZIP skill, otherwise serve SPA
+                // /showcase/{name} - check if package skill, otherwise serve SPA
                 String name = afterSlash.endsWith("/") ? afterSlash.substring(0, afterSlash.length() - 1) : afterSlash;
                 request.attributes().put("name", name);
                 return Mono.just(this::serveSkillPageOrApp);
@@ -150,8 +156,8 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
         String name = getPathVar(request, "name");
         return skillService.getPublicByName(name)
             .flatMap(skill -> {
-                if ("zip".equals(skill.sourceType())) {
-                    return serveZipSkillOrDetail(name);
+                if (SkillService.isPackageType(skill.sourceType())) {
+                    return servePackageSkillOrDetail(name);
                 }
                 return loadHtmlResource("showcase/app.html");
             })
@@ -162,8 +168,8 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
         String name = getPathVar(request, "name");
         return skillService.getPublicByName(name)
             .flatMap(skill -> {
-                if ("zip".equals(skill.sourceType())) {
-                    return serveZipSkillOrDetail(name);
+                if (SkillService.isPackageType(skill.sourceType())) {
+                    return servePackageSkillOrDetail(name);
                 }
                 return loadHtmlResource("showcase/detail.html");
             })
@@ -174,8 +180,8 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
         String name = getPathVar(request, "name");
         return skillService.getPublicByName(name)
             .flatMap(skill -> {
-                if ("zip".equals(skill.sourceType())) {
-                    return serveZipSkillOrDetail(name);
+                if (SkillService.isPackageType(skill.sourceType())) {
+                    return servePackageSkillOrDetail(name);
                 }
                 return loadHtmlResource("showcase/detail.html");
             })
@@ -183,11 +189,11 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
     }
 
     /**
-     * A ZIP skill is either a website package (has index.html — previewed directly)
-     * or a skillhub-style package (markdown entry, no index.html — browsed via the
-     * VSCode-style detail page).
+     * A package skill (uploaded ZIP or GitHub import) is either a website package
+     * (has index.html — previewed directly) or a skillhub-style package (markdown
+     * entry, no index.html — browsed via the VSCode-style detail page).
      */
-    private Mono<ServerResponse> serveZipSkillOrDetail(String name) {
+    private Mono<ServerResponse> servePackageSkillOrDetail(String name) {
         Path dir = skillService.skillDir(name);
         if (!Files.isDirectory(dir)) {
             return ServerResponse.notFound().build();
@@ -242,19 +248,39 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
     private Mono<ServerResponse> getFileTree(ServerRequest request) {
         String name = getPathVar(request, "name");
         return skillService.getPublicByName(name)
-            .filter(s -> "zip".equals(s.sourceType()))
+            .filter(s -> SkillService.isPackageType(s.sourceType()))
             .flatMap(s -> ServerResponse.ok()
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(skillService.buildFileTree(name)))
             .switchIfEmpty(ServerResponse.notFound().build());
     }
 
+    /**
+     * Count a detail-page view. GET on purpose (anonymous role template only
+     * grants "get" on non-resource URLs); errors never surface to the visitor.
+     */
+    private Mono<ServerResponse> countView(ServerRequest request) {
+        String name = getPathVar(request, "name");
+        return skillService.incrementViews(name)
+            .flatMap(s -> ServerResponse.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(java.util.Map.of("views", s.views() != null ? s.views() : 0L)))
+            .onErrorResume(e -> {
+                log.debug("view count failed for {}: {}", name, e.getMessage());
+                return ServerResponse.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(java.util.Map.of("views", 0L));
+            })
+            .switchIfEmpty(ServerResponse.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(java.util.Map.of("views", 0L)));
+    }
+
     private Mono<ServerResponse> downloadZip(ServerRequest request) {
         String name = getPathVar(request, "name");
         return skillService.getPublicByName(name)
-            .filter(s -> "zip".equals(s.sourceType()))
             .flatMap(s -> {
-                byte[] bytes = skillService.zipContent(name);
+                byte[] bytes = skillService.zipContent(toExtension(s));
                 String filename = name + "-" + (s.skillVersion() != null ? s.skillVersion() : "v1").replace('/', '_') + ".zip";
                 return ServerResponse.ok()
                     .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
@@ -269,6 +295,30 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
                 .onErrorResume(err -> Mono.empty())
                 .subscribe())
             .switchIfEmpty(ServerResponse.notFound().build());
+    }
+
+    /** Rebuild the minimal Skill extension view zipContent(Skill) expects. */
+    private Skill toExtension(SkillVo vo) {
+        Skill skill = new Skill();
+        skill.getMetadata().setName(vo.name());
+        Skill.Spec spec = new Skill.Spec();
+        spec.setSourceType(vo.sourceType());
+        spec.setContent(vo.content());
+        if (vo.files() != null) {
+            spec.setFiles(vo.files().stream()
+                .map(f -> {
+                    Skill.SkillFile sf = new Skill.SkillFile();
+                    sf.setPath(f.path());
+                    sf.setName(f.name());
+                    sf.setLanguage(f.language());
+                    sf.setContent(f.content());
+                    sf.setSize(f.size());
+                    return sf;
+                })
+                .collect(java.util.stream.Collectors.toList()));
+        }
+        skill.setSpec(spec);
+        return skill;
     }
 
     private String getPathVar(ServerRequest request, String name) {
@@ -288,9 +338,9 @@ public class PublicShowcaseRouter implements RouterFunction<ServerResponse> {
         if (safe == null) {
             return ServerResponse.badRequest().bodyValue("invalid path");
         }
-        // 仅已发布的 ZIP 技能允许对外提供文件，防止草稿内容被匿名访问
+        // 仅已发布的包技能（ZIP 上传 / GitHub 导入）允许对外提供文件，防止草稿内容被匿名访问
         return skillService.getPublicByName(name)
-            .filter(s -> "zip".equals(s.sourceType()))
+            .filter(s -> SkillService.isPackageType(s.sourceType()))
             .flatMap(s -> {
                 Path dir = skillService.skillDir(name);
                 Path target = dir.resolve(safe).normalize();

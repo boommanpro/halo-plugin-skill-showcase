@@ -51,6 +51,37 @@ public class Skill extends AbstractExtension {
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         private String sourceType;
 
+        /**
+         * GitHub source in "owner/repo" form; present when sourceType == "github".
+         * Drives npx-style install command generation and upstream sync.
+         */
+        @Schema(maxLength = 200)
+        private String sourceRepo;
+
+        /**
+         * Subdirectory inside the repository when the skill is not at repo root.
+         */
+        @Schema(maxLength = 200)
+        private String sourceSubdir;
+
+        /**
+         * Branch / tag / ref used at import time; null means the repo default branch.
+         */
+        @Schema(maxLength = 100)
+        private String sourceRef;
+
+        /**
+         * Head commit sha captured at the last import/sync, used for update detection.
+         */
+        @Schema(maxLength = 40)
+        private String upstreamCommit;
+
+        /**
+         * Upstream version parsed from SKILL.md frontmatter at the last sync.
+         */
+        @Schema(maxLength = 50)
+        private String upstreamVersion;
+
         @Schema
         private String zipPath;
 
@@ -93,6 +124,9 @@ public class Skill extends AbstractExtension {
 
         @Schema
         private Long downloads = 0L;
+
+        @Schema
+        private Long views = 0L;
 
         @Schema
         private Double rating = 0.0;

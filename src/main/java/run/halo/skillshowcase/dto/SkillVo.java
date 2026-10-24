@@ -32,5 +32,10 @@ public record SkillVo(
         Double rating,
         Long ratingCount,
         Long favorites,
-        String installCommand
+        String installCommand,
+        String sourceRepo,
+        String sourceSubdir,
+        String sourceRef,
+        String upstreamVersion,
+        Long views
 ) {}

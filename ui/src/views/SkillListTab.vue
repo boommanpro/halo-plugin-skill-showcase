@@ -4,6 +4,7 @@ import axios from "axios";
 import { VButton, VTag, VSpace, Toast } from "@halo-dev/components";
 import SkillEditorDialog from "./SkillEditorDialog.vue";
 import SkillUploadDialog from "./SkillUploadDialog.vue";
+import GitHubImportDialog from "./GitHubImportDialog.vue";
 import CategoryManager from "./CategoryManager.vue";
 
 const apiBase = "/apis/console.api.skill-showcase.halo.run/v1alpha1";
@@ -16,9 +17,14 @@ const filterCategory = ref("");
 const showEditor = ref(false);
 const showUploader = ref(false);
 const showCategoryMgr = ref(false);
+const showGithubImport = ref(false);
 const editingSkill = ref<any>(null);
 // 更新模式下:记录被更新的 zip skill,交给上传对话框使用
 const updatingSkill = ref<any>(null);
+// github 来源技能的同步状态: { [name]: 'checking'|'syncing' }
+const syncBusy = ref<Record<string, string>>({});
+// 有上游新版本的 skill name 集合
+const updatableSkills = ref<Set<string>>(new Set());
 
 const filteredSkills = computed(() => {
   return skills.value.filter((s) => {
@@ -119,9 +125,69 @@ function sourceTypeMeta(type: string) {
   const map: Record<string, { text: string; color: string }> = {
     markdown: { text: "Markdown", color: "#22c55e" },
     zip: { text: "ZIP", color: "#0ea5e9" },
+    github: { text: "GitHub", color: "#8b5cf6" },
     external: { text: "外链", color: "#f59e0b" },
   };
   return map[type] || { text: type, color: "#6b7280" };
+}
+
+function formatCount(n: number | null | undefined) {
+  const num = Number(n || 0);
+  if (num >= 10000) return (num / 10000).toFixed(1) + "w";
+  if (num >= 1000) return (num / 1000).toFixed(1) + "k";
+  return String(num);
+}
+
+async function checkUpstream(skill: any) {
+  syncBusy.value = { ...syncBusy.value, [skill.name]: "checking" };
+  try {
+    const res = await axios.post(`${apiBase}/skills/${skill.name}/check-upstream`);
+    const status = res.data;
+    const next = new Set(updatableSkills.value);
+    if (status.hasUpdate) {
+      next.add(skill.name);
+      Toast.info(status.message || "上游有新版本");
+    } else {
+      next.delete(skill.name);
+      Toast.success(status.message || "已是最新");
+    }
+    updatableSkills.value = next;
+  } catch (e: any) {
+    Toast.error(
+      typeof e.response?.data === "string" ? e.response.data : "检查更新失败"
+    );
+  } finally {
+    const next = { ...syncBusy.value };
+    delete next[skill.name];
+    syncBusy.value = next;
+  }
+}
+
+async function syncSkill(skill: any) {
+  if (
+    !confirm(
+      `确定同步 "${skill.displayName}" 到上游最新版本吗？\n本地内容（文件/版本/简介）将被上游覆盖，分类和标签保留。`
+    )
+  ) {
+    return;
+  }
+  syncBusy.value = { ...syncBusy.value, [skill.name]: "syncing" };
+  try {
+    await axios.post(`${apiBase}/skills/${skill.name}/sync`);
+    const next = new Set(updatableSkills.value);
+    next.delete(skill.name);
+    updatableSkills.value = next;
+    Toast.success("同步完成");
+    await fetchSkills();
+  } catch (e: any) {
+    Toast.error(
+      typeof e.response?.data === "string" ? e.response.data : "同步失败"
+    );
+  } finally {
+    const next = { ...syncBusy.value };
+    delete next[skill.name];
+    syncBusy.value = next;
+  }
 }
 
 function previewSkill(skill: any) {
@@ -159,6 +225,7 @@ onMounted(async () => {
         />
         <VButton @click="showCategoryMgr = true">分类管理</VButton>
         <VButton @click="openUpdateZip(null)">ZIP 上传</VButton>
+        <VButton @click="showGithubImport = true">GitHub 导入</VButton>
         <VButton type="primary" @click="openCreate">+ 新增 Skill</VButton>
       </div>
     </div>
@@ -171,22 +238,35 @@ onMounted(async () => {
             <th>分类</th>
             <th>类型</th>
             <th>标签</th>
+            <th style="width: 110px">浏览 / 下载</th>
             <th style="width: 80px">排序</th>
             <th style="width: 80px">发布</th>
-            <th style="width: 300px; min-width: 300px">操作</th>
+            <th style="width: 340px; min-width: 340px">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="7" class="loading-cell">加载中...</td>
+            <td colspan="8" class="loading-cell">加载中...</td>
           </tr>
           <tr v-else-if="filteredSkills.length === 0">
-            <td colspan="7" class="empty-cell">暂无 Skill，点击"新增 Skill"或"ZIP 上传"添加</td>
+            <td colspan="8" class="empty-cell">
+              暂无 Skill，点击"GitHub 导入"、"ZIP 上传"或"新增 Skill"添加
+            </td>
           </tr>
           <tr v-for="skill in filteredSkills" :key="skill.name">
             <td>
-              <div class="skill-name">{{ skill.displayName }}</div>
-              <div class="skill-summary">{{ skill.summary }}</div>
+              <div class="skill-name">
+                {{ skill.displayName }}
+                <span
+                  v-if="updatableSkills.has(skill.name)"
+                  class="update-dot"
+                  title="上游有新版本"
+                >●</span>
+              </div>
+              <div class="skill-summary">
+                <template v-if="skill.sourceRepo">@{{ skill.sourceRepo }}</template>
+                <template v-else>{{ skill.summary }}</template>
+              </div>
             </td>
             <td>
               <VTag>{{ getCategoryName(skill.category) }}</VTag>
@@ -205,6 +285,9 @@ onMounted(async () => {
                   +{{ skill.tags.length - 3 }}
                 </span>
               </div>
+            </td>
+            <td class="stats-cell">
+              👁 {{ formatCount(skill.views) }} · ⬇ {{ formatCount(skill.downloads) }}
             </td>
             <td>{{ skill.sortOrder ?? 0 }}</td>
             <td>
@@ -228,6 +311,23 @@ onMounted(async () => {
                 >
                   更新
                 </VButton>
+                <template v-if="skill.sourceType === 'github'">
+                  <VButton
+                    size="sm"
+                    :disabled="syncBusy[skill.name] !== undefined"
+                    @click="checkUpstream(skill)"
+                  >
+                    {{ syncBusy[skill.name] === 'checking' ? '检查中…' : '检查更新' }}
+                  </VButton>
+                  <VButton
+                    size="sm"
+                    type="primary"
+                    :disabled="syncBusy[skill.name] !== undefined"
+                    @click="syncSkill(skill)"
+                  >
+                    {{ syncBusy[skill.name] === 'syncing' ? '同步中…' : '同步' }}
+                  </VButton>
+                </template>
                 <VButton size="sm" type="danger" @click="handleDelete(skill.name)">
                   删除
                 </VButton>
@@ -252,6 +352,13 @@ onMounted(async () => {
       :categories="categories"
       @close="showUploader = false"
       @uploaded="async () => { await fetchSkills(); await fetchCategories(); showUploader = false; }"
+    />
+
+    <GitHubImportDialog
+      v-if="showGithubImport"
+      :categories="categories"
+      @close="showGithubImport = false"
+      @imported="async () => { await fetchSkills(); await fetchCategories(); showGithubImport = false; }"
     />
 
     <CategoryManager
@@ -336,6 +443,18 @@ onMounted(async () => {
 .skill-name {
   font-weight: 500;
   color: var(--color-text, #111827);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.update-dot {
+  color: #f59e0b;
+  font-size: 10px;
+}
+.stats-cell {
+  font-size: 12.5px;
+  color: var(--color-text-secondary, #6b7280);
+  white-space: nowrap;
 }
 .skill-summary {
   font-size: 12px;
