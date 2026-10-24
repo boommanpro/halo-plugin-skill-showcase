@@ -113,12 +113,7 @@ public class SkillEndpoint implements RouterFunction<ServerResponse> {
         });
     }
 
-    /** 最近一次 preview 的服务端时间线（诊断 POST 504 用），url → receivedAt/finishedAt。 */
-    static final java.util.Map<String, String> RECENT_PREVIEWS =
-        new java.util.concurrent.ConcurrentHashMap<>();
-
     private Mono<ServerResponse> previewImport(ServerRequest request) {
-        long received = System.currentTimeMillis();
         String queryUrl = request.queryParam("url").orElse(null);
         Mono<String> urlMono = (queryUrl != null && !queryUrl.isBlank())
             ? Mono.just(queryUrl)
@@ -129,18 +124,10 @@ public class SkillEndpoint implements RouterFunction<ServerResponse> {
                 if (url.isBlank()) {
                     return Mono.error(new ServerWebInputException("url is required"));
                 }
-                RECENT_PREVIEWS.put(url, "received@" + received);
                 return importService.preview(url)
-                    .doOnSuccess(p -> RECENT_PREVIEWS.put(url,
-                        "received@" + received + " → done@" + System.currentTimeMillis()
-                            + " (" + (System.currentTimeMillis() - received) + "ms) "
-                            + p.displayName()))
                     .flatMap(preview -> ServerResponse.ok().bodyValue(preview));
             })
             .onErrorResume(e -> {
-                String url = queryUrl != null ? queryUrl : "?";
-                RECENT_PREVIEWS.put(url, "received@" + received + " → error@"
-                    + System.currentTimeMillis() + ": " + e.getMessage());
                 if (e instanceof ServerWebInputException swe) {
                     return ServerResponse.badRequest().bodyValue(
                         java.util.Map.of("detail", String.valueOf(swe.getMessage())));
@@ -163,14 +150,9 @@ public class SkillEndpoint implements RouterFunction<ServerResponse> {
                         req.category(), req.summary(), req.tags(), req.published())
                     .flatMap(vo -> ServerResponse.ok().bodyValue(vo))
                     .onErrorResume(e -> {
-                        java.io.StringWriter sw = new java.io.StringWriter();
-                        e.printStackTrace(new java.io.PrintWriter(sw));
-                        String stack = sw.toString();
-                        return ServerResponse.status(500).bodyValue(java.util.Map.of(
-                            "debug", true,
-                            "errorClass", e.getClass().getName(),
-                            "message", String.valueOf(e.getMessage()),
-                            "stack", stack.length() > 3000 ? stack.substring(0, 3000) : stack));
+                        String msg = String.valueOf(e.getMessage());
+                        return ServerResponse.badRequest().bodyValue(
+                            java.util.Map.of("detail", msg.length() > 300 ? msg.substring(0, 300) : msg));
                     });
             });
     }
@@ -184,10 +166,7 @@ public class SkillEndpoint implements RouterFunction<ServerResponse> {
     /** Diagnose the server's reachability to GitHub and its mirrors. */
     private Mono<ServerResponse> githubProbe(ServerRequest request) {
         return githubClient.diagnoseChannels()
-            .flatMap(base -> {
-                base.put("recentPreviews", new java.util.LinkedHashMap<>(RECENT_PREVIEWS));
-                return ServerResponse.ok().bodyValue(base);
-            });
+            .flatMap(base -> ServerResponse.ok().bodyValue(base));
     }
 
     private Mono<ServerResponse> syncSkill(ServerRequest request) {
